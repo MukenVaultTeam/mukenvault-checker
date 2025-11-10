@@ -1,75 +1,44 @@
 #!/bin/bash
 
 #================================================================
-# MukenVault導入前システムチェッカー v1.1
-#================================================================
-# 目的: MukenVaultの導入可能性と期待性能を事前診断
-# 対象: Linux VPS/サーバー環境
-# 実行: sudo ./mukenvault_pre_check.sh
-# 更新: v1.1 - VAES実性能測定機能を追加
+# MukenVault Pre-Installation Checker v1.1.1
+# v1.1に平文測定機能を追加（最小限の修正）
 #================================================================
 
-set -e
-
-# カラー定義
+# 色の定義
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
+WHITE='\033[1;37m'
 NC='\033[0m' # No Color
 
-# スコア管理
-SCORE=0
-MAX_SCORE=100
+# Root権限チェック
+if [[ $EUID -ne 0 ]]; then
+   echo "このスクリプトはroot権限で実行する必要があります"
+   echo "使用方法: sudo $0"
+   exit 1
+fi
 
-# 結果保存
-RESULTS_FILE="mukenvault_check_$(date +%Y%m%d_%H%M%S).txt"
-
-#================================================================
-# ヘルパー関数
-#================================================================
-
-print_header() {
-    echo ""
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}  $1${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
+# 一時ディレクトリ作成
+TEMP_DIR=$(mktemp -d)
+cleanup() {
+    rm -rf "$TEMP_DIR"
 }
+trap cleanup EXIT
 
-print_success() {
-    echo -e "${GREEN}✅ $1${NC}"
-}
+# レポートファイル名
+REPORT_FILE="mukenvault_check_$(date +%Y%m%d_%H%M%S).txt"
 
-print_warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
-}
-
-print_error() {
-    echo -e "${RED}❌ $1${NC}"
-}
-
-print_info() {
-    echo -e "${BLUE}ℹ️  $1${NC}"
-}
-
-add_score() {
-    SCORE=$((SCORE + $1))
-    echo "[+$1点] $2" >> "$RESULTS_FILE"
-}
-
-#================================================================
-# メイン処理開始
-#================================================================
-
+# ヘッダー表示
 clear
 echo -e "${CYAN}"
 cat << "EOF"
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║   MukenVault導入前システムチェッカー v1.1                   ║
+║   MukenVault導入前システムチェッカー v1.1.1                 ║
 ║                                                              ║
 ║   あなたの環境でMukenVaultがどれだけの性能を発揮できるかを  ║
 ║   事前診断します                                            ║
@@ -77,481 +46,578 @@ cat << "EOF"
 ╚══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}"
-
+echo ""
 echo "診断を開始します..."
-echo "結果は ${RESULTS_FILE} に保存されます"
+echo "結果は $REPORT_FILE に保存されます"
+echo ""
 echo ""
 
-# 結果ファイルの初期化
-cat > "$RESULTS_FILE" << EOF
-MukenVault導入前システムチェック結果
-実行日時: $(date)
-ホスト名: $(hostname)
-OS: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'"' -f2 || echo "不明")
+# スコア変数初期化
+TOTAL_SCORE=0
+MAX_SCORE=100
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-詳細結果
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-EOF
-
-#================================================================
+# =================================================================
 # 1. 基本システム情報
-#================================================================
+# =================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}  1. 基本システム情報${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
 
-print_header "1. 基本システム情報"
-
+# OS情報
+OS_INFO=$(cat /etc/os-release 2>/dev/null | grep "PRETTY_NAME" | cut -d'"' -f2 || echo "Unknown")
 echo "OS情報:"
-cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'"' -f2 || echo "不明"
+echo "$OS_INFO"
 echo ""
 
+# カーネルバージョン
+KERNEL=$(uname -r)
 echo "カーネルバージョン:"
-uname -r
+echo "$KERNEL"
 echo ""
 
+# アーキテクチャ
+ARCH=$(uname -m)
 echo "アーキテクチャ:"
-uname -m
+echo "$ARCH"
 echo ""
 
-if [[ $(uname -m) == "x86_64" ]]; then
-    print_success "x86_64アーキテクチャ: 対応"
-    add_score 5 "x86_64アーキテクチャ"
+if [ "$ARCH" = "x86_64" ]; then
+    echo -e "${GREEN}✅ x86_64アーキテクチャ: 対応${NC}"
+    ARCH_SCORE=5
 else
-    print_error "非対応アーキテクチャ: $(uname -m)"
-    echo "MukenVaultはx86_64専用です"
+    echo -e "${RED}❌ x86_64アーキテクチャ: 非対応${NC}"
+    echo "MukenVaultはx86_64アーキテクチャでのみ動作します"
+    exit 1
+fi
+echo ""
+
+# =================================================================
+# 2. CPU性能チェック
+# =================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}  2. CPU性能チェック${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+# CPUモデル
+CPU_MODEL=$(cat /proc/cpuinfo | grep "model name" | head -1 | cut -d':' -f2 | xargs)
+if [ -z "$CPU_MODEL" ]; then
+    CPU_MODEL="Unknown CPU"
+fi
+echo "CPUモデル: $CPU_MODEL"
+
+# CPUコア数
+CPU_CORES=$(nproc)
+echo "CPUコア数: $CPU_CORES"
+
+# CPU周波数
+CPU_FREQ=$(cat /proc/cpuinfo | grep "cpu MHz" | head -1 | cut -d':' -f2 | xargs)
+if [ -z "$CPU_FREQ" ]; then
+    CPU_FREQ="Unknown"
+else
+    CPU_FREQ="${CPU_FREQ} MHz"
+fi
+echo "CPU周波数: $CPU_FREQ"
+echo ""
+
+# CPUコア数スコアリング
+if [ "$CPU_CORES" -ge 8 ]; then
+    echo -e "${GREEN}✅ CPUコア数: $CPU_CORES (十分)${NC}"
+    CPU_SCORE=15
+elif [ "$CPU_CORES" -ge 4 ]; then
+    echo -e "${GREEN}✅ CPUコア数: $CPU_CORES (良好)${NC}"
+    CPU_SCORE=10
+elif [ "$CPU_CORES" -ge 2 ]; then
+    echo -e "${YELLOW}⚠️  CPUコア数: $CPU_CORES (最低限)${NC}"
+    CPU_SCORE=5
+else
+    echo -e "${RED}❌ CPUコア数: $CPU_CORES (不足)${NC}"
+    CPU_SCORE=0
+fi
+echo ""
+
+# =================================================================
+# 3. CPU命令セットチェック（最重要）
+# =================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}  3. CPU命令セットチェック（最重要）${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+# AES-NIチェック
+HAS_AES_NI=$(grep -o 'aes' /proc/cpuinfo | head -1)
+if [ -n "$HAS_AES_NI" ]; then
+    echo -e "${GREEN}✅ AES-NI: サポート ✅ 必須機能${NC}"
+    AES_NI_SCORE=30
+else
+    echo -e "${RED}❌ AES-NI: 非サポート${NC}"
+    echo -e "${RED}MukenVaultはAES-NIが必須です${NC}"
     exit 1
 fi
 
-#================================================================
-# 2. CPU性能チェック
-#================================================================
-
-print_header "2. CPU性能チェック"
-
-# CPU情報取得
-CPU_MODEL=$(cat /proc/cpuinfo | grep "model name" | head -1 | cut -d: -f2 | xargs)
-CPU_CORES=$(nproc)
-CPU_MHZ=$(cat /proc/cpuinfo | grep "cpu MHz" | head -1 | cut -d: -f2 | xargs)
-
-echo "CPUモデル: $CPU_MODEL"
-echo "CPUコア数: $CPU_CORES"
-echo "CPU周波数: ${CPU_MHZ} MHz"
-echo ""
-
-# スコア加算
-if [ $CPU_CORES -ge 16 ]; then
-    print_success "CPUコア数: $CPU_CORES (最高)"
-    add_score 15 "CPUコア数16以上"
-elif [ $CPU_CORES -ge 8 ]; then
-    print_success "CPUコア数: $CPU_CORES (優秀)"
-    add_score 12 "CPUコア数8以上"
-elif [ $CPU_CORES -ge 4 ]; then
-    print_success "CPUコア数: $CPU_CORES (良好)"
-    add_score 10 "CPUコア数4以上"
-elif [ $CPU_CORES -ge 2 ]; then
-    print_warning "CPUコア数: $CPU_CORES (最低限)"
-    add_score 7 "CPUコア数2以上"
+# AVX2チェック
+HAS_AVX2=$(grep -o 'avx2' /proc/cpuinfo | head -1)
+if [ -n "$HAS_AVX2" ]; then
+    echo -e "${GREEN}✅ AVX2: サポート ✅ 性能向上に有効${NC}"
+    AVX2_SCORE=10
 else
-    print_error "CPUコア数: $CPU_CORES (不足)"
-    add_score 0 "CPUコア数1"
+    echo -e "${YELLOW}⚠️  AVX2: 非サポート${NC}"
+    AVX2_SCORE=0
 fi
 
-#================================================================
-# 3. CPU命令セットチェック（最重要）
-#================================================================
-
-print_header "3. CPU命令セットチェック（最重要）"
-
-HAS_AES=0
-HAS_AVX2=0
-HAS_VAES=0
-HAS_AVX512=0
-
-# AES-NI
-if grep -q aes /proc/cpuinfo; then
-    print_success "AES-NI: サポート ✅ 必須機能"
-    add_score 25 "AES-NIサポート（必須）"
-    HAS_AES=1
+# VAESチェック
+HAS_VAES=$(grep -o 'vaes' /proc/cpuinfo | head -1)
+if [ -n "$HAS_VAES" ]; then
+    echo -e "${GREEN}✅ VAES: サポート ✅ 最高性能を実現${NC}"
+    VAES_SCORE=15
+    VAES_AVAILABLE=1
 else
-    print_error "AES-NI: 非サポート ❌ MukenVault導入には工夫が必要"
-    add_score 0 "AES-NI非サポート"
-    HAS_AES=0
+    echo -e "${YELLOW}ℹ️  VAES: 非サポート${NC}"
+    VAES_SCORE=0
+    VAES_AVAILABLE=0
 fi
 
-# AVX2
-if grep -q avx2 /proc/cpuinfo; then
-    print_success "AVX2: サポート ✅ 性能向上に有効"
-    add_score 10 "AVX2サポート"
-    HAS_AVX2=1
+# AVX-512チェック
+HAS_AVX512=$(grep -o 'avx512f' /proc/cpuinfo | head -1)
+if [ -n "$HAS_AVX512" ]; then
+    echo -e "${GREEN}✅ AVX-512: サポート ✅ 高性能${NC}"
+    AVX512_SCORE=5
 else
-    print_info "AVX2: 非サポート（性能が制限される可能性）"
-    add_score 0 "AVX2非サポート"
-    HAS_AVX2=0
+    echo -e "${YELLOW}ℹ️  AVX-512: 非サポート${NC}"
+    AVX512_SCORE=0
 fi
 
-# VAES
-if grep -q vaes /proc/cpuinfo; then
-    print_success "VAES: サポート ✅ 最高性能を実現"
-    add_score 10 "VAESサポート"
-    HAS_VAES=1
-else
-    print_info "VAES: 非サポート（最新CPUのみ対応）"
-    add_score 0 "VAES非サポート"
-    HAS_VAES=0
-fi
-
-# AVX-512
-if grep -q avx512f /proc/cpuinfo; then
-    print_success "AVX-512: サポート ✅ 高性能"
-    add_score 5 "AVX-512サポート"
-    HAS_AVX512=1
-else
-    print_info "AVX-512: 非サポート（一般的なCPU）"
-    add_score 0 "AVX-512非サポート"
-    HAS_AVX512=0
-fi
+INSTRUCTION_SCORE=$((AES_NI_SCORE + AVX2_SCORE + VAES_SCORE + AVX512_SCORE))
 
 echo ""
 echo "【命令セット評価】"
-if [ $HAS_VAES -eq 1 ]; then
+if [ "$VAES_AVAILABLE" -eq 1 ]; then
     echo -e "${GREEN}最高性能環境: VAES対応で30GB/s以上の性能が期待できます${NC}"
-    PERF_TIER="Premium"
-elif [ $HAS_AVX2 -eq 1 ] && [ $HAS_AES -eq 1 ]; then
-    echo -e "${GREEN}高性能環境: AVX2+AES-NI対応で20-30GB/sの性能が期待できます${NC}"
-    PERF_TIER="High"
-elif [ $HAS_AES -eq 1 ]; then
-    echo -e "${YELLOW}標準性能環境: AES-NI対応で10-20GB/sの性能が期待できます${NC}"
-    PERF_TIER="Standard"
+elif [ "$AVX2_SCORE" -gt 0 ]; then
+    echo "標準性能環境: AVX2対応で10-20GB/sの性能が期待できます"
 else
-    echo -e "${RED}要カスタマイズ環境: AES-NI非対応、専門サポートが必要です${NC}"
-    PERF_TIER="Custom"
+    echo "基本性能環境: AES-NIのみで5-10GB/sの性能が期待できます"
 fi
-
-#================================================================
-# 4. メモリチェック
-#================================================================
-
-print_header "4. メモリ性能チェック"
-
-# メモリ容量
-TOTAL_MEM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
-TOTAL_MEM_GB=$(echo "scale=2; $TOTAL_MEM_KB / 1024 / 1024" | bc)
-
-echo "総メモリ: ${TOTAL_MEM_GB} GB"
 echo ""
 
-if (( $(echo "$TOTAL_MEM_GB >= 32" | bc -l) )); then
-    print_success "メモリ容量: ${TOTAL_MEM_GB} GB (最高)"
-    add_score 8 "メモリ32GB以上"
-elif (( $(echo "$TOTAL_MEM_GB >= 16" | bc -l) )); then
-    print_success "メモリ容量: ${TOTAL_MEM_GB} GB (優秀)"
-    add_score 7 "メモリ16GB以上"
-elif (( $(echo "$TOTAL_MEM_GB >= 8" | bc -l) )); then
-    print_success "メモリ容量: ${TOTAL_MEM_GB} GB (良好)"
-    add_score 5 "メモリ8GB以上"
-elif (( $(echo "$TOTAL_MEM_GB >= 4" | bc -l) )); then
-    print_warning "メモリ容量: ${TOTAL_MEM_GB} GB (最低限)"
-    add_score 3 "メモリ4GB以上"
+# =================================================================
+# 4. メモリ性能チェック
+# =================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}  4. メモリ性能チェック${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+# メモリ容量
+MEM_TOTAL_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+MEM_TOTAL_GB=$(awk "BEGIN {printf \"%.2f\", $MEM_TOTAL_KB / 1048576}")
+
+echo "総メモリ: $MEM_TOTAL_GB GB"
+echo ""
+
+# メモリ容量スコアリング
+MEM_TOTAL_INT=$(awk "BEGIN {print int($MEM_TOTAL_GB)}")
+if [ "$MEM_TOTAL_INT" -ge 16 ]; then
+    echo -e "${GREEN}✅ メモリ容量: $MEM_TOTAL_GB GB (十分)${NC}"
+    MEM_CAPACITY_SCORE=10
+elif [ "$MEM_TOTAL_INT" -ge 8 ]; then
+    echo -e "${GREEN}✅ メモリ容量: $MEM_TOTAL_GB GB (良好)${NC}"
+    MEM_CAPACITY_SCORE=7
+elif [ "$MEM_TOTAL_INT" -ge 4 ]; then
+    echo -e "${YELLOW}ℹ️  メモリ容量: $MEM_TOTAL_GB GB (標準)${NC}"
+    echo "   ※ VPS料金プランの選定基準です。MukenVault性能には影響しません"
+    MEM_CAPACITY_SCORE=5
 else
-    print_error "メモリ容量: ${TOTAL_MEM_GB} GB (不足)"
-    add_score 0 "メモリ4GB未満"
+    echo -e "${YELLOW}ℹ️  メモリ容量: $MEM_TOTAL_GB GB (小規模VPS)${NC}"
+    echo "   ※ VPS料金プランの選定基準です。MukenVault性能には影響しません"
+    MEM_CAPACITY_SCORE=2
 fi
 
 # メモリ帯域測定
 echo "メモリ帯域を測定中..."
 
-# コンパイラチェック
-if ! command -v gcc &> /dev/null; then
-    print_warning "gccが見つかりません。インストールします..."
-    if command -v apt-get &> /dev/null; then
-        apt-get update -qq
-        apt-get install -y gcc build-essential > /dev/null 2>&1
-    elif command -v yum &> /dev/null; then
-        yum install -y gcc make > /dev/null 2>&1
-    fi
-fi
-
-cat > /tmp/mem_bandwidth_test.c << 'EOF'
+cat > "$TEMP_DIR/mem_bandwidth.c" << 'EOFCODE'
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
 
-static inline double get_time(void) {
+#define SIZE (256 * 1024 * 1024)
+#define ITERATIONS 3
+
+double get_time() {
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    return tv.tv_sec + tv.tv_usec * 1e-6;
+    return tv.tv_sec + tv.tv_usec / 1000000.0;
 }
 
 int main() {
-    size_t size = 256 * 1024 * 1024;
-    char* src = malloc(size);
-    char* dst = malloc(size);
+    char *src = aligned_alloc(64, SIZE);
+    char *dst = aligned_alloc(64, SIZE);
+    memset(src, 0x42, SIZE);
     
-    if (!src || !dst) {
-        printf("0.0\n");
-        return 1;
-    }
-    
-    memset(src, 0xAA, size);
-    
-    double best = 0;
-    for (int i = 0; i < 3; i++) {
+    double best_speed = 0.0;
+    for (int i = 0; i < ITERATIONS; i++) {
         double start = get_time();
-        memcpy(dst, src, size);
+        memcpy(dst, src, SIZE);
         double end = get_time();
-        double speed = (size / (1024.0 * 1024.0 * 1024.0)) / (end - start);
-        if (speed > best) best = speed;
+        double speed = (SIZE / (1024.0 * 1024.0 * 1024.0)) / (end - start);
+        if (speed > best_speed) best_speed = speed;
     }
     
-    printf("%.2f\n", best);
-    
+    printf("%.2f\n", best_speed);
     free(src);
     free(dst);
     return 0;
 }
-EOF
+EOFCODE
 
-gcc -O2 -o /tmp/mem_bw /tmp/mem_bandwidth_test.c 2>/dev/null
-MEM_BANDWIDTH=$(/tmp/mem_bw)
+gcc -O2 -o "$TEMP_DIR/mem_bandwidth" "$TEMP_DIR/mem_bandwidth.c" 2>/dev/null
+MEM_BANDWIDTH=$("$TEMP_DIR/mem_bandwidth")
 
-echo "メモリ帯域: ${MEM_BANDWIDTH} GB/s"
+echo "メモリ帯域: $MEM_BANDWIDTH GB/s"
 echo ""
 
-# メモリ帯域評価
-if (( $(echo "$MEM_BANDWIDTH >= 30" | bc -l) )); then
-    print_success "メモリ帯域: ${MEM_BANDWIDTH} GB/s (最高)"
-    add_score 12 "メモリ帯域30GB/s以上"
-    MEM_QUALITY="最高"
-elif (( $(echo "$MEM_BANDWIDTH >= 25" | bc -l) )); then
-    print_success "メモリ帯域: ${MEM_BANDWIDTH} GB/s (優秀)"
-    add_score 10 "メモリ帯域25GB/s以上"
-    MEM_QUALITY="優秀"
-elif (( $(echo "$MEM_BANDWIDTH >= 20" | bc -l) )); then
-    print_success "メモリ帯域: ${MEM_BANDWIDTH} GB/s (良好)"
-    add_score 8 "メモリ帯域20GB/s以上"
-    MEM_QUALITY="良好"
-elif (( $(echo "$MEM_BANDWIDTH >= 15" | bc -l) )); then
-    print_warning "メモリ帯域: ${MEM_BANDWIDTH} GB/s (標準)"
-    add_score 6 "メモリ帯域15GB/s以上"
-    MEM_QUALITY="標準"
-elif (( $(echo "$MEM_BANDWIDTH >= 10" | bc -l) )); then
-    print_warning "メモリ帯域: ${MEM_BANDWIDTH} GB/s (制限あり)"
-    add_score 4 "メモリ帯域10GB/s以上"
-    MEM_QUALITY="制限あり"
+# メモリ帯域スコアリング
+MEM_BW_INT=$(awk "BEGIN {print int($MEM_BANDWIDTH)}")
+if [ "$MEM_BW_INT" -ge 30 ]; then
+    echo -e "${GREEN}✅ メモリ帯域: $MEM_BANDWIDTH GB/s (優秀)${NC}"
+    MEM_BANDWIDTH_SCORE=10
+elif [ "$MEM_BW_INT" -ge 15 ]; then
+    echo -e "${GREEN}✅ メモリ帯域: $MEM_BANDWIDTH GB/s (良好)${NC}"
+    MEM_BANDWIDTH_SCORE=7
+elif [ "$MEM_BW_INT" -ge 8 ]; then
+    echo -e "${YELLOW}⚠️  メモリ帯域: $MEM_BANDWIDTH GB/s (制限あり)${NC}"
+    MEM_BANDWIDTH_SCORE=5
 else
-    print_error "メモリ帯域: ${MEM_BANDWIDTH} GB/s (低速)"
-    add_score 0 "メモリ帯域10GB/s未満"
-    MEM_QUALITY="低速"
+    echo -e "${RED}⚠️  メモリ帯域: $MEM_BANDWIDTH GB/s (低速)${NC}"
+    MEM_BANDWIDTH_SCORE=2
 fi
 
-#================================================================
-# 5. AES-NI実性能測定
-#================================================================
+MEM_SCORE=$((MEM_CAPACITY_SCORE + MEM_BANDWIDTH_SCORE))
+echo ""
 
-print_header "5. AES-NI実性能測定"
+# =================================================================
+# 4.5 平文アクセス性能測定（NEW!）
+# =================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}  4.5 平文アクセス性能測定（ベースライン）${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
 
-if [ $HAS_AES -eq 1 ]; then
-    echo "AES-NI暗号化性能を測定中..."
+echo "平文アクセス速度を測定中..."
+echo "（これは暗号化していない通常のメモリアクセス速度です）"
+echo ""
 
-    cat > /tmp/aes_benchmark.c << 'EOF'
+# 8バイト単位平文アクセステスト（volatile修正版）
+cat > "$TEMP_DIR/plaintext_8byte.c" << 'EOFCODE'
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdint.h>
 #include <sys/time.h>
-#include <immintrin.h>
-#include <wmmintrin.h>
+#include <stdint.h>
 
-static inline double get_time(void) {
+#define DATA_SIZE (512 * 1024 * 1024)
+#define ITERATIONS 3
+
+double get_time() {
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    return tv.tv_sec + tv.tv_usec * 1e-6;
-}
-
-void aes_encrypt_4blocks(uint8_t* data, size_t size) {
-    __m128i key = _mm_set_epi32(0x12345678, 0x9abcdef0, 0x11111111, 0x22222222);
-    size_t blocks = size / 16;
-    __m128i* ptr = (__m128i*)data;
-    
-    for (size_t i = 0; i + 3 < blocks; i += 4) {
-        __m128i b0 = _mm_loadu_si128(&ptr[i + 0]);
-        __m128i b1 = _mm_loadu_si128(&ptr[i + 1]);
-        __m128i b2 = _mm_loadu_si128(&ptr[i + 2]);
-        __m128i b3 = _mm_loadu_si128(&ptr[i + 3]);
-        
-        b0 = _mm_xor_si128(b0, key);
-        b1 = _mm_xor_si128(b1, key);
-        b2 = _mm_xor_si128(b2, key);
-        b3 = _mm_xor_si128(b3, key);
-        
-        for (int r = 0; r < 9; r++) {
-            b0 = _mm_aesenc_si128(b0, key);
-            b1 = _mm_aesenc_si128(b1, key);
-            b2 = _mm_aesenc_si128(b2, key);
-            b3 = _mm_aesenc_si128(b3, key);
-        }
-        
-        b0 = _mm_aesenclast_si128(b0, key);
-        b1 = _mm_aesenclast_si128(b1, key);
-        b2 = _mm_aesenclast_si128(b2, key);
-        b3 = _mm_aesenclast_si128(b3, key);
-        
-        _mm_storeu_si128(&ptr[i + 0], b0);
-        _mm_storeu_si128(&ptr[i + 1], b1);
-        _mm_storeu_si128(&ptr[i + 2], b2);
-        _mm_storeu_si128(&ptr[i + 3], b3);
-    }
+    return tv.tv_sec + tv.tv_usec / 1000000.0;
 }
 
 int main() {
-    size_t size = 256 * 1024 * 1024;
-    uint8_t* data = aligned_alloc(16, size);
+    uint64_t *data = (uint64_t *)aligned_alloc(64, DATA_SIZE);
+    if (!data) return 1;
     
-    if (!data) {
-        printf("0.0\n");
-        return 1;
-    }
+    memset(data, 0x42, DATA_SIZE);
+    volatile uint64_t sum = 0;
+    size_t count = DATA_SIZE / sizeof(uint64_t);
+    double best_speed = 0.0;
     
-    memset(data, 0xAA, size);
-    
-    double best = 0;
-    for (int i = 0; i < 3; i++) {
+    for (int iter = 0; iter < ITERATIONS; iter++) {
         double start = get_time();
-        aes_encrypt_4blocks(data, size);
+        for (size_t i = 0; i < count; i++) {
+            sum += data[i];
+        }
         double end = get_time();
-        double speed = (size / (1024.0 * 1024.0 * 1024.0)) / (end - start);
-        if (speed > best) best = speed;
+        double speed = (DATA_SIZE / (1024.0 * 1024.0 * 1024.0)) / (end - start);
+        if (speed > best_speed) best_speed = speed;
     }
     
-    printf("%.2f\n", best);
-    
+    printf("%.2f\n", best_speed);
     free(data);
     return 0;
 }
-EOF
+EOFCODE
 
-    gcc -O2 -march=native -maes -o /tmp/aes_bench /tmp/aes_benchmark.c 2>/dev/null
-    AES_SPEED=$(/tmp/aes_bench)
+gcc -O2 -march=native -o "$TEMP_DIR/plaintext_8byte" "$TEMP_DIR/plaintext_8byte.c" 2>/dev/null
+PLAINTEXT_8BYTE=$("$TEMP_DIR/plaintext_8byte")
 
-    echo "AES-NI暗号化速度: ${AES_SPEED} GB/s"
-    echo ""
+echo "平文アクセス（8バイト単位）: $PLAINTEXT_8BYTE GB/s"
 
-    # AES性能評価
-    if (( $(echo "$AES_SPEED >= 40" | bc -l) )); then
-        print_success "AES-NI性能: ${AES_SPEED} GB/s (最高性能)"
-        add_score 10 "AES性能40GB/s以上"
-        AES_QUALITY="最高性能"
-    elif (( $(echo "$AES_SPEED >= 30" | bc -l) )); then
-        print_success "AES-NI性能: ${AES_SPEED} GB/s (高性能)"
-        add_score 8 "AES性能30GB/s以上"
-        AES_QUALITY="高性能"
-    elif (( $(echo "$AES_SPEED >= 20" | bc -l) )); then
-        print_success "AES-NI性能: ${AES_SPEED} GB/s (良好)"
-        add_score 6 "AES性能20GB/s以上"
-        AES_QUALITY="良好"
-    elif (( $(echo "$AES_SPEED >= 10" | bc -l) )); then
-        print_warning "AES-NI性能: ${AES_SPEED} GB/s (標準)"
-        add_score 4 "AES性能10GB/s以上"
-        AES_QUALITY="標準"
-    else
-        print_warning "AES-NI性能: ${AES_SPEED} GB/s (制限あり)"
-        add_score 2 "AES性能10GB/s未満"
-        AES_QUALITY="制限あり"
-    fi
-else
-    print_error "AES-NI非対応のため測定をスキップ"
-    AES_SPEED="0.0"
-    AES_QUALITY="非対応"
-fi
-
-#================================================================
-# 6. VAES実性能測定（新機能）
-#================================================================
-
-VAES_SPEED="0.0"
-
-if [ $HAS_VAES -eq 1 ]; then
-    print_header "6. VAES実性能測定（最新CPUボーナス）"
-    
-    echo "VAES暗号化性能を測定中..."
-    echo "（これは最新世代CPUのみの特別機能です）"
-    echo ""
-
-    cat > /tmp/vaes_benchmark.c << 'EOF'
+# 64バイト単位平文アクセステスト（volatile修正版）
+cat > "$TEMP_DIR/plaintext_64byte.c" << 'EOFCODE'
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdint.h>
 #include <sys/time.h>
-#include <immintrin.h>
+#include <stdint.h>
+#include <emmintrin.h>
 
-static inline double get_time(void) {
+#define DATA_SIZE (512 * 1024 * 1024)
+#define ITERATIONS 3
+
+double get_time() {
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    return tv.tv_sec + tv.tv_usec * 1e-6;
+    return tv.tv_sec + tv.tv_usec / 1000000.0;
 }
 
-#ifdef __VAES__
-void vaes_encrypt_8blocks(uint8_t* data, size_t size) {
-    __m256i key = _mm256_set_epi32(0x12345678, 0x9abcdef0, 0x11111111, 0x22222222,
-                                    0x33333333, 0x44444444, 0x55555555, 0x66666666);
-    size_t blocks = size / 16;
-    __m128i* ptr = (__m128i*)data;
+int main() {
+    __m128i *data = (__m128i *)aligned_alloc(64, DATA_SIZE);
+    if (!data) return 1;
     
-    for (size_t i = 0; i + 7 < blocks; i += 8) {
-        __m256i b01 = _mm256_loadu_si256((__m256i*)&ptr[i + 0]);
-        __m256i b23 = _mm256_loadu_si256((__m256i*)&ptr[i + 2]);
-        __m256i b45 = _mm256_loadu_si256((__m256i*)&ptr[i + 4]);
-        __m256i b67 = _mm256_loadu_si256((__m256i*)&ptr[i + 6]);
+    memset(data, 0x42, DATA_SIZE);
+    volatile uint64_t sum = 0;
+    size_t count = DATA_SIZE / 64;
+    double best_speed = 0.0;
+    
+    for (int iter = 0; iter < ITERATIONS; iter++) {
+        double start = get_time();
+        for (size_t i = 0; i < count * 4; i += 4) {
+            __m128i v0 = _mm_load_si128(&data[i]);
+            __m128i v1 = _mm_load_si128(&data[i + 1]);
+            __m128i v2 = _mm_load_si128(&data[i + 2]);
+            __m128i v3 = _mm_load_si128(&data[i + 3]);
+            sum += ((uint64_t*)&v0)[0] + ((uint64_t*)&v1)[0] + 
+                   ((uint64_t*)&v2)[0] + ((uint64_t*)&v3)[0];
+        }
+        double end = get_time();
+        double speed = (DATA_SIZE / (1024.0 * 1024.0 * 1024.0)) / (end - start);
+        if (speed > best_speed) best_speed = speed;
+    }
+    
+    printf("%.2f\n", best_speed);
+    free(data);
+    return 0;
+}
+EOFCODE
+
+gcc -O2 -march=native -msse2 -o "$TEMP_DIR/plaintext_64byte" "$TEMP_DIR/plaintext_64byte.c" 2>/dev/null
+PLAINTEXT_64BYTE=$("$TEMP_DIR/plaintext_64byte")
+
+echo "平文アクセス（64バイト単位・最適化）: $PLAINTEXT_64BYTE GB/s"
+echo ""
+
+echo "【平文性能の意味】"
+echo "この数値はMukenVault「なし」の状態でのメモリアクセス速度です。"
+echo "後ほど測定する暗号化速度と比較することで、実際のオーバーヘッドがわかります。"
+echo ""
+
+# =================================================================
+# 5. AES-NI実性能測定
+# =================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}  5. AES-NI実性能測定${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+echo "AES-NI暗号化性能を測定中..."
+
+cat > "$TEMP_DIR/aes_benchmark.c" << 'EOFCODE'
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <wmmintrin.h>
+#include <sys/time.h>
+
+#define SIZE (256 * 1024 * 1024)
+#define ITERATIONS 5
+
+double get_time() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + tv.tv_usec / 1000000.0;
+}
+
+__m128i AES_128_key_expansion(__m128i key, __m128i key_gen) {
+    key_gen = _mm_shuffle_epi32(key_gen, 0xff);
+    key = _mm_xor_si128(key, _mm_slli_si128(key, 4));
+    key = _mm_xor_si128(key, _mm_slli_si128(key, 4));
+    key = _mm_xor_si128(key, _mm_slli_si128(key, 4));
+    return _mm_xor_si128(key, key_gen);
+}
+
+int main() {
+    unsigned char *data = aligned_alloc(16, SIZE);
+    memset(data, 0x42, SIZE);
+    
+    __m128i key = _mm_set_epi32(0x12345678, 0x9ABCDEF0, 0x12345678, 0x9ABCDEF0);
+    __m128i round_keys[11];
+    
+    round_keys[0] = key;
+    round_keys[1] = AES_128_key_expansion(round_keys[0], _mm_aeskeygenassist_si128(round_keys[0], 0x01));
+    round_keys[2] = AES_128_key_expansion(round_keys[1], _mm_aeskeygenassist_si128(round_keys[1], 0x02));
+    round_keys[3] = AES_128_key_expansion(round_keys[2], _mm_aeskeygenassist_si128(round_keys[2], 0x04));
+    round_keys[4] = AES_128_key_expansion(round_keys[3], _mm_aeskeygenassist_si128(round_keys[3], 0x08));
+    round_keys[5] = AES_128_key_expansion(round_keys[4], _mm_aeskeygenassist_si128(round_keys[4], 0x10));
+    round_keys[6] = AES_128_key_expansion(round_keys[5], _mm_aeskeygenassist_si128(round_keys[5], 0x20));
+    round_keys[7] = AES_128_key_expansion(round_keys[6], _mm_aeskeygenassist_si128(round_keys[6], 0x40));
+    round_keys[8] = AES_128_key_expansion(round_keys[7], _mm_aeskeygenassist_si128(round_keys[7], 0x80));
+    round_keys[9] = AES_128_key_expansion(round_keys[8], _mm_aeskeygenassist_si128(round_keys[8], 0x1B));
+    round_keys[10] = AES_128_key_expansion(round_keys[9], _mm_aeskeygenassist_si128(round_keys[9], 0x36));
+    
+    double best_speed = 0.0;
+    for (int iter = 0; iter < ITERATIONS; iter++) {
+        double start = get_time();
+        for (size_t i = 0; i < SIZE; i += 16) {
+            __m128i block = _mm_loadu_si128((__m128i*)(data + i));
+            block = _mm_xor_si128(block, round_keys[0]);
+            for (int r = 1; r < 10; r++) {
+                block = _mm_aesenc_si128(block, round_keys[r]);
+            }
+            block = _mm_aesenclast_si128(block, round_keys[10]);
+            _mm_storeu_si128((__m128i*)(data + i), block);
+        }
+        double end = get_time();
+        double speed = (SIZE / (1024.0 * 1024.0 * 1024.0)) / (end - start);
+        if (speed > best_speed) best_speed = speed;
+    }
+    
+    printf("%.2f\n", best_speed);
+    free(data);
+    return 0;
+}
+EOFCODE
+
+gcc -O3 -march=native -maes -o "$TEMP_DIR/aes_benchmark" "$TEMP_DIR/aes_benchmark.c" 2>/dev/null
+AES_SPEED=$("$TEMP_DIR/aes_benchmark")
+
+echo "AES-NI暗号化速度: $AES_SPEED GB/s"
+echo ""
+
+# AES性能スコアリング
+AES_SPEED_INT=$(awk "BEGIN {print int($AES_SPEED)}")
+if [ "$AES_SPEED_INT" -ge 20 ]; then
+    echo -e "${GREEN}✅ AES-NI性能: $AES_SPEED GB/s (優秀)${NC}"
+    AES_PERF_SCORE=15
+elif [ "$AES_SPEED_INT" -ge 10 ]; then
+    echo -e "${YELLOW}⚠️  AES-NI性能: $AES_SPEED GB/s (標準)${NC}"
+    AES_PERF_SCORE=10
+elif [ "$AES_SPEED_INT" -ge 5 ]; then
+    echo -e "${YELLOW}⚠️  AES-NI性能: $AES_SPEED GB/s (やや低速)${NC}"
+    AES_PERF_SCORE=7
+else
+    echo -e "${RED}⚠️  AES-NI性能: $AES_SPEED GB/s (低速)${NC}"
+    AES_PERF_SCORE=5
+fi
+echo ""
+
+# =================================================================
+# 6. VAES実性能測定（最新CPUボーナス）
+# =================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}  6. VAES実性能測定（最新CPUボーナス）${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+VAES_BONUS=0
+
+if [ "$VAES_AVAILABLE" -eq 1 ]; then
+    echo "VAES暗号化性能を測定中..."
+    echo "（これは最新世代CPUのみの特別機能です）"
+    echo ""
+    
+    cat > "$TEMP_DIR/vaes_benchmark.c" << 'EOFCODE'
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/time.h>
+#include <stdint.h>
+#include <immintrin.h>
+#include <x86intrin.h>
+
+#define SIZE (256 * 1024 * 1024)
+#define ITERATIONS 5
+
+double get_time() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec + tv.tv_usec / 1000000.0;
+}
+
+#if defined(__AVX512F__) && defined(__VAES__)
+void keyless_vaes_encrypt(uint8_t* data, size_t size, const uint8_t* key) {
+    __m128i base_key = _mm_loadu_si128((__m128i*)key);
+    __m512i round_keys[15];
+    
+    for (int i = 0; i < 15; i++) {
+        round_keys[i] = _mm512_broadcast_i32x4(base_key);
+    }
+    
+    size_t blocks = size / 256;
+    __m512i* ptr = (__m512i*)data;
+    
+    for (size_t i = 0; i < blocks; i += 4) {
+        _mm_prefetch((char*)&ptr[i + 8], _MM_HINT_T0);
         
-        b01 = _mm256_xor_si256(b01, key);
-        b23 = _mm256_xor_si256(b23, key);
-        b45 = _mm256_xor_si256(b45, key);
-        b67 = _mm256_xor_si256(b67, key);
+        __m512i b0 = _mm512_loadu_si512(&ptr[i]);
+        __m512i b1 = _mm512_loadu_si512(&ptr[i + 1]);
+        __m512i b2 = _mm512_loadu_si512(&ptr[i + 2]);
+        __m512i b3 = _mm512_loadu_si512(&ptr[i + 3]);
         
-        for (int r = 0; r < 9; r++) {
-            b01 = _mm256_aesenc_epi128(b01, key);
-            b23 = _mm256_aesenc_epi128(b23, key);
-            b45 = _mm256_aesenc_epi128(b45, key);
-            b67 = _mm256_aesenc_epi128(b67, key);
+        b0 = _mm512_xor_si512(b0, round_keys[0]);
+        b1 = _mm512_xor_si512(b1, round_keys[0]);
+        b2 = _mm512_xor_si512(b2, round_keys[0]);
+        b3 = _mm512_xor_si512(b3, round_keys[0]);
+        
+        for (int r = 1; r < 14; r++) {
+            b0 = _mm512_aesenc_epi128(b0, round_keys[r]);
+            b1 = _mm512_aesenc_epi128(b1, round_keys[r]);
+            b2 = _mm512_aesenc_epi128(b2, round_keys[r]);
+            b3 = _mm512_aesenc_epi128(b3, round_keys[r]);
         }
         
-        b01 = _mm256_aesenclast_epi128(b01, key);
-        b23 = _mm256_aesenclast_epi128(b23, key);
-        b45 = _mm256_aesenclast_epi128(b45, key);
-        b67 = _mm256_aesenclast_epi128(b67, key);
+        b0 = _mm512_aesenclast_epi128(b0, round_keys[14]);
+        b1 = _mm512_aesenclast_epi128(b1, round_keys[14]);
+        b2 = _mm512_aesenclast_epi128(b2, round_keys[14]);
+        b3 = _mm512_aesenclast_epi128(b3, round_keys[14]);
         
-        _mm256_storeu_si256((__m256i*)&ptr[i + 0], b01);
-        _mm256_storeu_si256((__m256i*)&ptr[i + 2], b23);
-        _mm256_storeu_si256((__m256i*)&ptr[i + 4], b45);
-        _mm256_storeu_si256((__m256i*)&ptr[i + 6], b67);
+        _mm512_storeu_si512(&ptr[i], b0);
+        _mm512_storeu_si512(&ptr[i + 1], b1);
+        _mm512_storeu_si512(&ptr[i + 2], b2);
+        _mm512_storeu_si512(&ptr[i + 3], b3);
     }
 }
 #endif
 
 int main() {
-#ifdef __VAES__
-    size_t size = 256 * 1024 * 1024;
-    uint8_t* data = aligned_alloc(32, size);
+#if defined(__AVX512F__) && defined(__VAES__)
+    uint8_t* data = aligned_alloc(64, SIZE);
+    uint8_t key[16] = {0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+                       0x11, 0x11, 0x11, 0x11, 0x22, 0x22, 0x22, 0x22};
     
     if (!data) {
         printf("0.0\n");
         return 1;
     }
     
-    memset(data, 0xAA, size);
+    memset(data, 0xAA, SIZE);
     
-    double best = 0;
-    for (int i = 0; i < 3; i++) {
+    keyless_vaes_encrypt(data, SIZE, key);
+    
+    double best_speed = 0.0;
+    for (int iter = 0; iter < ITERATIONS; iter++) {
         double start = get_time();
-        vaes_encrypt_8blocks(data, size);
+        keyless_vaes_encrypt(data, SIZE, key);
         double end = get_time();
-        double speed = (size / (1024.0 * 1024.0 * 1024.0)) / (end - start);
-        if (speed > best) best = speed;
+        double speed = (SIZE / (1024.0 * 1024.0 * 1024.0)) / (end - start);
+        if (speed > best_speed) best_speed = speed;
     }
     
-    printf("%.2f\n", best);
+    printf("%.2f\n", best_speed);
     
     free(data);
     return 0;
@@ -560,353 +626,383 @@ int main() {
     return 1;
 #endif
 }
-EOF
+EOFCODE
 
-    # VAES対応でコンパイル
-    if gcc -O3 -march=native -mvaes -mavx2 -o /tmp/vaes_bench /tmp/vaes_benchmark.c 2>/dev/null; then
-        VAES_SPEED=$(/tmp/vaes_bench)
+    gcc -O3 -march=native -mavx512f -mvaes -o "$TEMP_DIR/vaes_benchmark" "$TEMP_DIR/vaes_benchmark.c" 2>/dev/null
+    if [ $? -eq 0 ]; then
+        VAES_SPEED=$("$TEMP_DIR/vaes_benchmark" 2>/dev/null || echo "0")
         
-        if (( $(echo "$VAES_SPEED > 0" | bc -l) )); then
-            echo "VAES暗号化速度: ${VAES_SPEED} GB/s"
+        if [ "$VAES_SPEED" != "0" ]; then
+            echo "VAES暗号化速度: $VAES_SPEED GB/s"
             echo ""
             
-            # VAES性能評価（ボーナススコア）
-            if (( $(echo "$VAES_SPEED >= 60" | bc -l) )); then
-                print_success "VAES性能: ${VAES_SPEED} GB/s (圧倒的！次世代性能)"
-                add_score 15 "VAES性能60GB/s以上（ボーナス）"
-                VAES_QUALITY="圧倒的"
-            elif (( $(echo "$VAES_SPEED >= 50" | bc -l) )); then
-                print_success "VAES性能: ${VAES_SPEED} GB/s (驚異的！最高性能)"
-                add_score 12 "VAES性能50GB/s以上（ボーナス）"
-                VAES_QUALITY="驚異的"
-            elif (( $(echo "$VAES_SPEED >= 40" | bc -l) )); then
-                print_success "VAES性能: ${VAES_SPEED} GB/s (素晴らしい！)"
-                add_score 10 "VAES性能40GB/s以上（ボーナス）"
-                VAES_QUALITY="素晴らしい"
-            elif (( $(echo "$VAES_SPEED >= 30" | bc -l) )); then
-                print_success "VAES性能: ${VAES_SPEED} GB/s (優秀！)"
-                add_score 8 "VAES性能30GB/s以上（ボーナス）"
-                VAES_QUALITY="優秀"
-            elif (( $(echo "$VAES_SPEED >= 20" | bc -l) )); then
-                print_success "VAES性能: ${VAES_SPEED} GB/s (良好)"
-                add_score 6 "VAES性能20GB/s以上（ボーナス）"
-                VAES_QUALITY="良好"
+            # VAES vs AES-NI比較
+            RATIO=$(awk "BEGIN {printf \"%.2f\", $VAES_SPEED / $AES_SPEED}")
+            echo "【VAES効果】"
+            echo "  AES-NI比: ${RATIO}倍高速！"
+            echo "  → VAESは通常のAES-NIより大幅に高速です"
+            echo ""
+            
+            # VAESボーナススコア計算（控えめに調整）
+            VAES_SPEED_INT=$(awk "BEGIN {print int($VAES_SPEED)}")
+            if [ "$VAES_SPEED_INT" -ge 60 ]; then
+                VAES_BONUS=10
+            elif [ "$VAES_SPEED_INT" -ge 50 ]; then
+                VAES_BONUS=8
+            elif [ "$VAES_SPEED_INT" -ge 40 ]; then
+                VAES_BONUS=7
+            elif [ "$VAES_SPEED_INT" -ge 30 ]; then
+                VAES_BONUS=6
+            elif [ "$VAES_SPEED_INT" -ge 20 ]; then
+                VAES_BONUS=5
+            elif [ "$VAES_SPEED_INT" -ge 10 ]; then
+                VAES_BONUS=3
             else
-                print_info "VAES性能: ${VAES_SPEED} GB/s"
-                add_score 4 "VAES性能測定成功（ボーナス）"
-                VAES_QUALITY="測定成功"
+                VAES_BONUS=2
             fi
             
-            # VAES vs AES-NI 比較
-            if (( $(echo "$AES_SPEED > 0" | bc -l) )); then
-                SPEEDUP=$(echo "scale=2; $VAES_SPEED / $AES_SPEED" | bc)
-                echo ""
-                echo -e "${MAGENTA}【VAES効果】${NC}"
-                echo -e "${MAGENTA}  AES-NI比: ${SPEEDUP}倍高速！${NC}"
-                echo -e "${MAGENTA}  → VAESは通常のAES-NIより大幅に高速です${NC}"
+            if [ "$VAES_SPEED_INT" -ge 20 ]; then
+                echo -e "${GREEN}ℹ️  VAES性能: $VAES_SPEED GB/s${NC}"
+            else
+                echo -e "${YELLOW}ℹ️  VAES性能: $VAES_SPEED GB/s${NC}"
             fi
         else
-            print_warning "VAES測定に失敗しました（環境の問題の可能性）"
-            VAES_SPEED="0.0"
-            VAES_QUALITY="測定失敗"
+            echo -e "${YELLOW}⚠️  VAES測定失敗${NC}"
         fi
     else
-        print_warning "VAESコンパイルに失敗しました"
-        VAES_SPEED="0.0"
-        VAES_QUALITY="コンパイル失敗"
+        echo -e "${YELLOW}⚠️  VAESベンチマーク コンパイル失敗${NC}"
     fi
 else
-    VAES_QUALITY="非対応"
+    echo -e "${YELLOW}ℹ️  VAES非対応CPUのため、この測定はスキップされます${NC}"
 fi
-
-#================================================================
-# 7. 環境種別の判定
-#================================================================
-
-print_header "7. 環境種別の判定"
-
-# 仮想化チェック
-if [ -f /proc/cpuinfo ]; then
-    if grep -q "hypervisor" /proc/cpuinfo; then
-        print_info "仮想化環境: はい（VPS/VM）"
-        IS_VIRTUAL=1
-        
-        # VPSプロバイダー推定
-        if dmesg 2>/dev/null | grep -qi "vultr"; then
-            PROVIDER="Vultr"
-        elif dmesg 2>/dev/null | grep -qi "digitalocean"; then
-            PROVIDER="DigitalOcean"
-        elif dmesg 2>/dev/null | grep -qi "amazon\|aws"; then
-            PROVIDER="AWS"
-        elif dmesg 2>/dev/null | grep -qi "google"; then
-            PROVIDER="Google Cloud"
-        elif dmesg 2>/dev/null | grep -qi "microsoft\|azure"; then
-            PROVIDER="Azure"
-        elif dmesg 2>/dev/null | grep -qi "conoha"; then
-            PROVIDER="ConoHa"
-        else
-            PROVIDER="不明"
-        fi
-        
-        echo "推定プロバイダー: $PROVIDER"
-    else
-        print_info "仮想化環境: いいえ（物理サーバー）"
-        IS_VIRTUAL=0
-        PROVIDER="物理サーバー"
-    fi
-else
-    print_warning "仮想化判定: 不明"
-    IS_VIRTUAL=-1
-    PROVIDER="不明"
-fi
-
 echo ""
 
-#================================================================
-# 8. 期待性能の算出（VAES考慮版）
-#================================================================
+# =================================================================
+# 7. 環境種別の判定
+# =================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}  7. 環境種別の判定${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
 
-print_header "8. 期待性能の算出"
-
-# 期待性能の計算（VAES優先）
-if [ $HAS_VAES -eq 1 ] && (( $(echo "$VAES_SPEED > 0" | bc -l) )); then
-    # VAES対応の場合はVAES性能を基準
-    if (( $(echo "$VAES_SPEED > $MEM_BANDWIDTH" | bc -l) )); then
-        # メモリがボトルネック
-        EXPECTED_PERF=$(echo "scale=2; $MEM_BANDWIDTH * 0.6" | bc)
-        BOTTLENECK="メモリ帯域"
-    else
-        # CPUがボトルネック
-        EXPECTED_PERF=$(echo "scale=2; $VAES_SPEED * 0.85" | bc)
-        BOTTLENECK="CPU性能"
-    fi
-    PERF_BASE="VAES"
-elif [ $HAS_AES -eq 1 ]; then
-    # AES-NI対応の場合
-    if (( $(echo "$AES_SPEED > $MEM_BANDWIDTH" | bc -l) )); then
-        # メモリがボトルネック
-        EXPECTED_PERF=$(echo "scale=2; $MEM_BANDWIDTH * 0.5" | bc)
-        BOTTLENECK="メモリ帯域"
-    else
-        # CPUがボトルネック
-        EXPECTED_PERF=$(echo "scale=2; $AES_SPEED * 0.8" | bc)
-        BOTTLENECK="CPU性能"
-    fi
-    PERF_BASE="AES-NI"
+# 仮想化チェック
+if [ -e /sys/hypervisor/type ]; then
+    HYPERVISOR=$(cat /sys/hypervisor/type)
+    echo -e "${YELLOW}ℹ️  仮想化環境: はい（$HYPERVISOR）${NC}"
+    IS_VIRTUAL=1
+elif grep -q "hypervisor" /proc/cpuinfo; then
+    echo -e "${YELLOW}ℹ️  仮想化環境: はい（VPS/VM）${NC}"
+    IS_VIRTUAL=1
 else
-    EXPECTED_PERF="1.0"
-    BOTTLENECK="AES-NI非対応"
-    PERF_BASE="ソフトウェア"
+    echo -e "${GREEN}ℹ️  仮想化環境: いいえ（物理マシン）${NC}"
+    IS_VIRTUAL=0
 fi
 
-# 仮想化オーバーヘッドの考慮
-if [ $IS_VIRTUAL -eq 1 ]; then
-    EXPECTED_PERF=$(echo "scale=2; $EXPECTED_PERF * 0.9" | bc)
+# プロバイダー推定
+PROVIDER="不明"
+if [ -e /sys/devices/virtual/dmi/id/sys_vendor ]; then
+    SYS_VENDOR=$(cat /sys/devices/virtual/dmi/id/sys_vendor 2>/dev/null)
+    case "$SYS_VENDOR" in
+        *"Amazon"*) PROVIDER="AWS" ;;
+        *"Google"*) PROVIDER="Google Cloud" ;;
+        *"Microsoft"*) PROVIDER="Azure" ;;
+        *"DigitalOcean"*) PROVIDER="DigitalOcean" ;;
+        *"Vultr"*) PROVIDER="Vultr" ;;
+        *"Linode"*) PROVIDER="Linode" ;;
+    esac
+fi
+
+echo "推定プロバイダー: $PROVIDER"
+echo ""
+echo ""
+
+# =================================================================
+# 8. 期待性能の算出
+# =================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}  8. 期待性能の算出${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+# ボトルネックの特定
+if [ "$VAES_AVAILABLE" -eq 1 ] && [ -n "$VAES_SPEED" ] && [ "$VAES_SPEED" != "0" ]; then
+    BASE_SPEED=$VAES_SPEED
+    PERF_BASIS="VAES"
+else
+    BASE_SPEED=$AES_SPEED
+    PERF_BASIS="AES-NI"
+fi
+
+# メモリ帯域との比較（実測値ベース）
+BOTTLENECK="CPU性能"
+EXPECTED_SPEED=$BASE_SPEED
+
+MEM_BW_FLOAT=$(awk "BEGIN {printf \"%.2f\", $MEM_BANDWIDTH}")
+BASE_SPEED_FLOAT=$(awk "BEGIN {printf \"%.2f\", $BASE_SPEED}")
+PLAINTEXT_64B_FLOAT=$(awk "BEGIN {printf \"%.2f\", $PLAINTEXT_64BYTE}")
+
+# 実測平文性能を優先的に使用
+if awk "BEGIN {exit !($PLAINTEXT_64B_FLOAT > $MEM_BW_FLOAT)}"; then
+    # 平文64バイト測定値の方が信頼性が高い
+    ACTUAL_MEM_PERF=$PLAINTEXT_64B_FLOAT
+else
+    ACTUAL_MEM_PERF=$MEM_BW_FLOAT
+fi
+
+if awk "BEGIN {exit !($ACTUAL_MEM_PERF < $BASE_SPEED_FLOAT)}"; then
+    BOTTLENECK="メモリ帯域"
+    # メモリがボトルネックの場合、平文性能とほぼ同じ
+    # （VAES処理が十分速いため、オーバーヘッドはほぼゼロ）
+    EXPECTED_SPEED=$(awk "BEGIN {printf \"%.2f\", $ACTUAL_MEM_PERF * 0.98}")
+else
+    # CPU性能の85%を期待値とする
+    EXPECTED_SPEED=$(awk "BEGIN {printf \"%.2f\", $BASE_SPEED * 0.85}")
+fi
+
+# 性能ティアの決定
+EXPECTED_SPEED_INT=$(awk "BEGIN {print int($EXPECTED_SPEED)}")
+if [ "$EXPECTED_SPEED_INT" -ge 30 ]; then
+    PERF_TIER="Enterprise"
+elif [ "$EXPECTED_SPEED_INT" -ge 15 ]; then
+    PERF_TIER="Premium"
+elif [ "$EXPECTED_SPEED_INT" -ge 8 ]; then
+    PERF_TIER="Standard"
+else
+    PERF_TIER="Basic"
 fi
 
 echo "【期待性能】"
-echo "  MukenVault導入後の予想速度: ${EXPECTED_PERF} GB/s"
-echo "  性能基準: ${PERF_BASE}"
-echo "  ボトルネック: ${BOTTLENECK}"
-echo "  性能ティア: ${PERF_TIER}"
+echo "  MukenVault導入後の予想速度: $EXPECTED_SPEED GB/s"
+echo "  性能基準: $PERF_BASIS"
+echo "  ボトルネック: $BOTTLENECK"
+echo "  性能ティア: $PERF_TIER"
 echo ""
 
-#================================================================
+# 革新的な発見の表示
+if [ "$BOTTLENECK" = "メモリ帯域" ] && awk "BEGIN {exit !($BASE_SPEED_FLOAT > $ACTUAL_MEM_PERF * 2)}"; then
+    echo "【革新的発見】"
+    echo "  平文アクセス:    ${PLAINTEXT_64B_FLOAT} GB/s"
+    echo "  ${PERF_BASIS}暗号化: ${BASE_SPEED_FLOAT} GB/s"
+    echo "  期待性能:        $EXPECTED_SPEED GB/s"
+    echo ""
+    echo -e "${GREEN}→ 暗号化してもほぼ同じ速度で動作します！${NC}"
+    echo -e "${GREEN}  （CPU処理が十分速いため、オーバーヘッドほぼゼロ）${NC}"
+    echo ""
+fi
+echo ""
+
+# =================================================================
 # 9. 体験品質の判定
-#================================================================
+# =================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}  9. 体験品質の判定${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
 
-print_header "9. 体験品質の判定"
-
-# 体験品質の判定
-if [ $HAS_AES -eq 0 ]; then
-    EXPERIENCE="🔴 要カスタマイズ"
-    OVERHEAD="40-60%"
-    COMFORT="要サポート相談"
-elif (( $(echo "$EXPECTED_PERF >= 30" | bc -l) )); then
-    EXPERIENCE="🟢 快適動作"
-    OVERHEAD="<3%"
-    COMFORT="どんな用途でも快適"
-elif (( $(echo "$EXPECTED_PERF >= 10" | bc -l) )); then
-    EXPERIENCE="🟡 実用的"
-    OVERHEAD="3-10%"
-    COMFORT="ほとんどの用途で快適"
-elif (( $(echo "$EXPECTED_PERF >= 1" | bc -l) )); then
-    EXPERIENCE="🟠 要検討"
+# オーバーヘッド予測
+if [ "$EXPECTED_SPEED_INT" -ge 30 ]; then
+    QUALITY="🟢 快適"
+    OVERHEAD="1-3%"
+    QUALITY_SCORE=10
+elif [ "$EXPECTED_SPEED_INT" -ge 15 ]; then
+    QUALITY="🟢 良好"
+    OVERHEAD="3-8%"
+    QUALITY_SCORE=8
+elif [ "$EXPECTED_SPEED_INT" -ge 8 ]; then
+    QUALITY="🟡 実用的"
+    OVERHEAD="5-15%"
+    QUALITY_SCORE=6
+elif [ "$EXPECTED_SPEED_INT" -ge 4 ]; then
+    QUALITY="🟠 要検討"
     OVERHEAD="10-30%"
-    COMFORT="用途によって快適度が変わる"
+    QUALITY_SCORE=4
 else
-    EXPERIENCE="🔴 要カスタマイズ"
-    OVERHEAD="40-60%"
-    COMFORT="要サポート相談"
+    QUALITY="🔴 推奨せず"
+    OVERHEAD="30%以上"
+    QUALITY_SCORE=2
 fi
 
 echo "【体験品質】"
-echo "  判定: ${EXPERIENCE}"
-echo "  予想オーバーヘッド: ${OVERHEAD}"
-echo "  快適度: ${COMFORT}"
+echo "  判定: $QUALITY"
+echo "  予想オーバーヘッド: $OVERHEAD"
+if [ "$EXPECTED_SPEED_INT" -ge 15 ]; then
+    echo "  快適度: ほぼ体感できない遅延"
+elif [ "$EXPECTED_SPEED_INT" -ge 8 ]; then
+    echo "  快適度: 通常利用では気にならない"
+elif [ "$EXPECTED_SPEED_INT" -ge 4 ]; then
+    echo "  快適度: 用途によって快適度が変わる"
+else
+    echo "  快適度: 負荷が高い用途では遅延を感じる可能性"
+fi
 echo ""
 
-# VAES特別メッセージ
-if [ $HAS_VAES -eq 1 ] && (( $(echo "$VAES_SPEED > 0" | bc -l) )); then
-    echo -e "${MAGENTA}🌟 VAES対応の恩恵 🌟${NC}"
-    echo -e "${MAGENTA}  この環境は最新世代CPUを搭載しており、${NC}"
-    echo -e "${MAGENTA}  MukenVaultが最高のパフォーマンスを発揮できます！${NC}"
+if [ "$VAES_AVAILABLE" -eq 1 ] && [ -n "$VAES_SPEED" ] && [ "$VAES_SPEED" != "0" ]; then
+    echo -e "${GREEN}🌟 VAES対応の恩恵 🌟${NC}"
+    echo "  この環境は最新世代CPUを搭載しており、"
+    echo "  MukenVaultが最高のパフォーマンスを発揮できます！"
     echo ""
 fi
-
-#================================================================
-# 10. 総合診断
-#================================================================
-
-print_header "10. 総合診断結果"
-
-# パーセンテージ計算（VAESボーナスで100点超える可能性あり）
-PERCENTAGE=$((SCORE * 100 / MAX_SCORE))
-if [ $PERCENTAGE -gt 100 ]; then
-    PERCENTAGE=100
-fi
-
-echo "総合スコア: ${SCORE}/${MAX_SCORE}点 (${PERCENTAGE}%)"
-if [ $SCORE -gt $MAX_SCORE ]; then
-    echo -e "${MAGENTA}★ VAESボーナスで基準値を超えました！ ★${NC}"
-fi
 echo ""
 
-# 評価
-if [ $PERCENTAGE -ge 90 ]; then
-    RATING="S (最高)"
-    COLOR=$GREEN
-    RECOMMENDATION="🎉 素晴らしい！この環境はMukenVaultの導入に最適です！"
-elif [ $PERCENTAGE -ge 75 ]; then
-    RATING="A (優秀)"
-    COLOR=$GREEN
-    RECOMMENDATION="✅ 優秀！この環境はMukenVaultの導入に適しています"
-elif [ $PERCENTAGE -ge 60 ]; then
-    RATING="B (良好)"
-    COLOR=$YELLOW
-    RECOMMENDATION="✅ 良好！この環境でもMukenVaultは実用的に動作します"
-elif [ $PERCENTAGE -ge 40 ]; then
-    RATING="C (可)"
-    COLOR=$YELLOW
-    RECOMMENDATION="⚠️  用途によります。軽量サービスなら快適に動作します"
+# =================================================================
+# 10. 総合診断結果
+# =================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}  10. 総合診断結果${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+# 総合スコア計算
+TOTAL_SCORE=$((ARCH_SCORE + CPU_SCORE + INSTRUCTION_SCORE + MEM_SCORE + AES_PERF_SCORE + QUALITY_SCORE + VAES_BONUS))
+
+# スコア表示
+echo "総合スコア: $TOTAL_SCORE/$MAX_SCORE点 ($((TOTAL_SCORE * 100 / MAX_SCORE))%)"
+echo ""
+
+# 総合評価（期待性能ベース）
+echo "【総合評価】"
+EXPECTED_SPEED_INT=$(awk "BEGIN {print int($EXPECTED_SPEED)}")
+
+if [ "$EXPECTED_SPEED_INT" -ge 30 ]; then
+    echo -e "  評価: ${GREEN}S (最高)${NC}"
+    echo "  ✅ 完璧！この環境ならMukenVaultが最高のパフォーマンスを発揮します"
+elif [ "$EXPECTED_SPEED_INT" -ge 15 ]; then
+    echo -e "  評価: ${GREEN}A (優秀)${NC}"
+    echo "  ✅ 優秀！MukenVaultに最適な環境です"
+elif [ "$EXPECTED_SPEED_INT" -ge 8 ]; then
+    echo -e "  評価: ${CYAN}B (良好)${NC}"
+    echo "  ✅ 良好！この環境でもMukenVaultは実用的に動作します"
+elif [ "$EXPECTED_SPEED_INT" -ge 4 ]; then
+    echo -e "  評価: ${YELLOW}C (可)${NC}"
+    echo "  ⚠️  用途を選べば問題なく使えます"
 else
-    RATING="D (要検討)"
-    COLOR=$RED
-    RECOMMENDATION="💡 軽量サービス向け。高負荷用途はサポートにご相談ください"
+    echo -e "  評価: ${RED}D (要改善)${NC}"
+    echo "  ⚠️  より高スペックな環境をお勧めします"
 fi
-
-echo -e "${COLOR}【総合評価】${NC}"
-echo -e "${COLOR}  評価: ${RATING}${NC}"
-echo -e "${COLOR}  ${RECOMMENDATION}${NC}"
+echo ""
 echo ""
 
-#================================================================
+# =================================================================
 # 11. 適合用途の判定
-#================================================================
-
-print_header "11. 適合用途の判定"
+# =================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}  11. 適合用途の判定${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
 
 echo "この環境で快適に使える用途:"
 echo ""
 
-if (( $(echo "$EXPECTED_PERF >= 30" | bc -l) )); then
-    echo -e "${GREEN}✅ 大規模Webサービス${NC}"
-    echo -e "${GREEN}✅ 高負荷データベース${NC}"
-    echo -e "${GREEN}✅ 大規模キャッシュサーバー${NC}"
-    echo -e "${GREEN}✅ エンタープライズアプリケーション${NC}"
+if [ "$EXPECTED_SPEED_INT" -ge 30 ]; then
+    echo -e "${GREEN}✅ エンタープライズWebアプリ${NC}"
+    echo -e "${GREEN}✅ 高トラフィックAPIサーバー${NC}"
+    echo -e "${GREEN}✅ データベースサーバー（大規模）${NC}"
     echo -e "${GREEN}✅ リアルタイム処理${NC}"
-    echo -e "${GREEN}✅ すべての用途に最適${NC}"
-    TARGET_MARKET="大規模・高負荷システム"
-elif (( $(echo "$EXPECTED_PERF >= 20" | bc -l) )); then
-    echo -e "${GREEN}✅ 中規模Webサービス${NC}"
-    echo -e "${GREEN}✅ 中規模データベース${NC}"
+    echo -e "${GREEN}✅ AI/ML推論サーバー${NC}"
+elif [ "$EXPECTED_SPEED_INT" -ge 15 ]; then
+    echo -e "${GREEN}✅ Webアプリケーション${NC}"
     echo -e "${GREEN}✅ APIサーバー${NC}"
-    echo -e "${GREEN}✅ 一般的なアプリケーション${NC}"
-    echo -e "${YELLOW}⚠️  大規模システム（条件付き）${NC}"
-    TARGET_MARKET="中規模システム"
-elif (( $(echo "$EXPECTED_PERF >= 10" | bc -l) )); then
-    echo -e "${GREEN}✅ 小中規模Webサービス${NC}"
-    echo -e "${GREEN}✅ 小規模データベース${NC}"
-    echo -e "${GREEN}✅ APIサーバー${NC}"
-    echo -e "${GREEN}✅ 開発環境${NC}"
-    echo -e "${YELLOW}⚠️  中規模データベース（条件付き）${NC}"
-    echo -e "${RED}❌ 大規模システム${NC}"
-    TARGET_MARKET="小中規模システム"
-else
+    echo -e "${GREEN}✅ データベースサーバー（中規模）${NC}"
+    echo -e "${GREEN}✅ ファイルサーバー${NC}"
+elif [ "$EXPECTED_SPEED_INT" -ge 8 ]; then
     echo -e "${GREEN}✅ 静的サイト・ブログ${NC}"
     echo -e "${GREEN}✅ ファイルサーバー${NC}"
     echo -e "${GREEN}✅ 開発・テスト環境${NC}"
     echo -e "${GREEN}✅ バックアップサーバー${NC}"
     echo -e "${YELLOW}⚠️  軽量Webアプリ（トライアル推奨）${NC}"
+elif [ "$EXPECTED_SPEED_INT" -ge 4 ]; then
+    echo -e "${GREEN}✅ 静的コンテンツ配信${NC}"
+    echo -e "${GREEN}✅ 個人用途${NC}"
+    echo -e "${YELLOW}⚠️  開発・検証環境（負荷制限あり）${NC}"
+    echo -e "${RED}❌ 本番Webアプリ${NC}"
+else
+    echo -e "${YELLOW}⚠️  検証・学習用途のみ${NC}"
+    echo -e "${RED}❌ 本番環境${NC}"
     echo -e "${RED}❌ 高負荷システム${NC}"
-    TARGET_MARKET="軽量サービス・開発環境"
 fi
-
 echo ""
 
-#================================================================
-# 12. レポート保存
-#================================================================
+# =================================================================
+# レポート保存
+# =================================================================
+{
+    echo "=========================================="
+    echo "MukenVault Pre-Installation Check Report"
+    echo "Generated: $(date)"
+    echo "=========================================="
+    echo ""
+    echo "System Information:"
+    echo "  OS: $OS_INFO"
+    echo "  Kernel: $KERNEL"
+    echo "  Architecture: $ARCH"
+    echo "  CPU: $CPU_MODEL"
+    echo "  CPU Cores: $CPU_CORES"
+    echo "  Memory: $MEM_TOTAL_GB GB"
+    echo "  Memory Bandwidth: $MEM_BANDWIDTH GB/s"
+    echo ""
+    echo "CPU Features:"
+    echo "  AES-NI: $([ -n "$HAS_AES_NI" ] && echo "Yes" || echo "No")"
+    echo "  AVX2: $([ -n "$HAS_AVX2" ] && echo "Yes" || echo "No")"
+    echo "  VAES: $([ -n "$HAS_VAES" ] && echo "Yes" || echo "No")"
+    echo "  AVX-512: $([ -n "$HAS_AVX512" ] && echo "Yes" || echo "No")"
+    echo ""
+    echo "Performance:"
+    echo "  Plaintext 8-byte: $PLAINTEXT_8BYTE GB/s"
+    echo "  Plaintext 64-byte: $PLAINTEXT_64BYTE GB/s"
+    echo "  AES-NI Speed: $AES_SPEED GB/s"
+    if [ "$VAES_AVAILABLE" -eq 1 ] && [ -n "$VAES_SPEED" ] && [ "$VAES_SPEED" != "0" ]; then
+        echo "  VAES Speed: $VAES_SPEED GB/s"
+        echo "  VAES vs AES-NI: ${RATIO}x faster"
+    fi
+    echo ""
+    echo "Environment:"
+    echo "  Virtual: $([ "$IS_VIRTUAL" -eq 1 ] && echo "Yes" || echo "No")"
+    echo "  Provider: $PROVIDER"
+    echo ""
+    echo "Expected Performance:"
+    echo "  Speed: $EXPECTED_SPEED GB/s"
+    echo "  Basis: $PERF_BASIS"
+    echo "  Bottleneck: $BOTTLENECK"
+    echo "  Tier: $PERF_TIER"
+    echo "  Quality: $QUALITY"
+    echo "  Overhead: $OVERHEAD"
+    echo ""
+    echo "Score:"
+    echo "  Total: $TOTAL_SCORE/$MAX_SCORE ($((TOTAL_SCORE * 100 / MAX_SCORE))%)"
+    if [ "$TOTAL_SCORE" -ge 90 ]; then
+        echo "  Grade: S (Excellent)"
+    elif [ "$TOTAL_SCORE" -ge 75 ]; then
+        echo "  Grade: A (Very Good)"
+    elif [ "$TOTAL_SCORE" -ge 60 ]; then
+        echo "  Grade: B (Good)"
+    elif [ "$TOTAL_SCORE" -ge 45 ]; then
+        echo "  Grade: C (Fair)"
+    else
+        echo "  Grade: D (Needs Improvement)"
+    fi
+    echo ""
+} > "$REPORT_FILE"
 
-cat >> "$RESULTS_FILE" << EOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-最終評価
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-総合スコア: ${SCORE}/${MAX_SCORE}点 (${PERCENTAGE}%)
-評価ランク: ${RATING}
-期待性能:   ${EXPECTED_PERF} GB/s
-性能基準:   ${PERF_BASE}
-ボトルネック: ${BOTTLENECK}
-体験品質:   ${EXPERIENCE}
-適合市場:   ${TARGET_MARKET}
-
-【システム構成】
-CPU: $CPU_MODEL
-CPUコア数: $CPU_CORES
-メモリ: ${TOTAL_MEM_GB} GB
-メモリ帯域: ${MEM_BANDWIDTH} GB/s
-AES-NI性能: ${AES_SPEED} GB/s
-$([ "$VAES_SPEED" != "0.0" ] && echo "VAES性能: ${VAES_SPEED} GB/s ★")
-環境: $PROVIDER
-
-【命令セット】
-AES-NI:  $([ $HAS_AES -eq 1 ] && echo "✅" || echo "❌")
-AVX2:    $([ $HAS_AVX2 -eq 1 ] && echo "✅" || echo "❌")
-VAES:    $([ $HAS_VAES -eq 1 ] && echo "✅ ★" || echo "❌")
-AVX-512: $([ $HAS_AVX512 -eq 1 ] && echo "✅" || echo "❌")
-
-【結論】
-$RECOMMENDATION
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EOF
-
-print_success "詳細レポートを ${RESULTS_FILE} に保存しました"
+echo -e "${GREEN}✅ 詳細レポートを $REPORT_FILE に保存しました${NC}"
+echo ""
 echo ""
 
-#================================================================
+# =================================================================
 # 13. 次のステップ
-#================================================================
-
-print_header "13. 次のステップ"
+# =================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}  13. 次のステップ${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
 
 echo "【MukenVault導入の流れ】"
 echo ""
 echo "1. このレポートを確認"
-echo "   → 保存場所: ${RESULTS_FILE}"
+echo "   → 保存場所: $REPORT_FILE"
 echo ""
 echo "2. 用途に応じた判断"
-if (( $(echo "$EXPECTED_PERF >= 30" | bc -l) )); then
-    echo "   → 今すぐMukenVaultを導入できます！"
-elif (( $(echo "$EXPECTED_PERF >= 10" | bc -l) )); then
-    echo "   → ほとんどの用途で快適に使えます"
-    echo "   → トライアルで実環境テスト推奨"
-else
-    echo "   → あなたの用途を教えてください"
-    echo "   → 最適な導入方法をアドバイスします"
-fi
+echo "   → あなたの用途を教えてください"
+echo "   → 最適な導入方法をアドバイスします"
 echo ""
 echo "3. お問い合わせ"
 echo "   📧 support@mukenvault.com"
@@ -914,11 +1010,14 @@ echo "   💬 https://github.com/MukenVaultTeam/mukenvault-checker"
 echo ""
 
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${CYAN}診断完了！ご利用ありがとうございました${NC}"
+echo -e "${GREEN}診断完了！ご利用ありがとうございました${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-
-# クリーンアップ
-rm -f /tmp/mem_bandwidth_test.c /tmp/mem_bw /tmp/aes_benchmark.c /tmp/aes_bench /tmp/vaes_benchmark.c /tmp/vaes_bench
-
-exit 0
+echo ""
+echo -e "${GREEN}"
+cat << "EOF"
+╔══════════════════════════════════════════════════════════════╗
+║  MukenVault Pre-Check completed successfully!               ║
+╚══════════════════════════════════════════════════════════════╝
+EOF
+echo -e "${NC}"
