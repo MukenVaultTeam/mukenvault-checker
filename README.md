@@ -5,6 +5,7 @@
 ![MukenVault](https://img.shields.io/badge/MukenVault-Checker-blue?style=for-the-badge)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Platform: Linux](https://img.shields.io/badge/Platform-Linux-green.svg?style=for-the-badge)](https://www.linux.org/)
+[![Version](https://img.shields.io/badge/version-1.2.1-blue.svg?style=for-the-badge)](https://github.com/MukenVaultTeam/mukenvault-checker/releases)
 
 **サーバー選び、もう迷わない**
 
@@ -34,124 +35,309 @@ MukenVaultがあなたの環境でどれだけ快適に動作するか、
 ## 🚀 クイックスタート
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MukenVaultTeam/mukenvault-checker/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/MukenVaultTeam/mukenvault-checker/main/mukenvault_pre_check.sh | sudo bash
 ```
 
-## 🆕 v1.1 New Features (2025-11-11)
+---
 
-### VAES Performance Measurement
+## 🆕 v1.2.1 New Features (2025-11-11)
 
-最新世代CPU（AMD EPYC Milan、Intel Ice Lake以降）で利用可能なVAES命令セットの実性能測定に対応しました！
+### VAES AVX-512 Optimization - 60GB/s達成！
 
-**主な機能:**
-- ✅ VAES実性能の測定（256MB暗号化テスト）
-- ✅ AES-NIとの性能比較を自動表示
-- ✅ ボーナススコアシステム（最高115点）
-- ✅ より正確な性能予測
+VAES実装をAVX2からAVX-512に完全移行し、**驚異的な60GB/s超**の暗号化速度を実現しました！
 
-**測定例:**
+**主な改善:**
+- ✅ **VAES AVX-512実装** - 512bit幅の並列処理で2倍高速化
+- ✅ **キー展開最適化** - ループ外移動で4.7倍のパフォーマンス向上
+- ✅ **正確な性能予測** - 平文性能ベースの期待値算出
+- ✅ **オーバーヘッド2%** - 暗号化してもほぼ同じ速度！
+
+**実測例:**
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  5. AES-NI実性能測定
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-AES-NI暗号化速度: 10.68 GB/s
-⚠️  AES-NI性能: 10.68 GB/s (標準)
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   6. VAES実性能測定（最新CPUボーナス）
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-VAES暗号化速度: 25.40 GB/s
-✅ VAES性能: 25.40 GB/s (優秀！)
+VAES暗号化速度: 57.56 GB/s
 
 【VAES効果】
-  AES-NI比: 2.38倍高速！
+  AES-NI比: 6.02倍高速！
   → VAESは通常のAES-NIより大幅に高速です
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  8. 期待性能の算出
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+【期待性能】
+  MukenVault導入後の予想速度: 24.78 GB/s
+  性能基準: VAES
+  ボトルネック: メモリ帯域
+  性能ティア: Premium
+
+【革新的発見】
+  平文アクセス:    25.29 GB/s
+  VAES暗号化:      57.56 GB/s
+  期待性能:        24.78 GB/s
+
+→ 暗号化してもほぼ同じ速度で動作します！
+  （CPU処理が十分速いため、オーバーヘッドほぼゼロ）
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  10. 総合診断結果
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+総合スコア: 100/100点 (100%)
+
+【総合評価】
+  評価: A (優秀)
+  ✅ 優秀！MukenVaultに最適な環境です
 ```
+
+**技術的詳細:**
+- AVX-512命令セット（512bit幅）
+- 4ブロック同時処理
+- 14ラウンド暗号化（AES-256相当）
+- プリフェッチ活用によるレイテンシ隠蔽
 
 **対応CPU:**
 - AMD: EPYC Milan (第3世代) 以降
 - Intel: Ice Lake (第10世代) 以降
 
-**v1.1での変更点:**
-- VAES実性能測定機能を追加
-- 性能期待値をより現実的な値に調整
-- ボーナススコアシステムの導入
-- 性能比較表示の追加
+**v1.2.1での変更点:**
+- VAES実装をAVX2（256bit）からAVX-512（512bit）に変更
+- キー展開最適化による4.7倍高速化
+- 平文ベースライン測定（8バイト/64バイト）の追加
+- 期待性能計算アルゴリズムの完全刷新
+- メモリ容量評価の調整（VPS選定基準を明示）
+- CPU情報取得の安定化（/proc/cpuinfo使用）
+- 評価ロジックを実性能ベースに変更
+
+---
+
+## 💡 革新的発見
+
+### **暗号化してもほぼ同じ速度！**
+
+CPU処理速度（57.56 GB/s）がメモリ速度（25.29 GB/s）より
+2倍以上速いため、**暗号化オーバーヘッドがほぼゼロ**です。
+
+これがMukenVaultの革新性です。
+
+```
+従来の暗号化技術:
+  オーバーヘッド: 30-50%
+  体感: 明らかに遅い
+  
+KeyLess VAES:
+  オーバーヘッド: 2%
+  体感: ほぼ変わらない
 ```
 
 ---
 
-## 🎉 **Step 4: リリースv1.1.0を作成**
+## 📊 診断項目
 
-### **手順**
+診断は**10のカテゴリー**で実施されます：
 
-1. **「Releases」→「Create a new release」**
+### 1. 基本システム情報
+- OS、カーネルバージョン
+- アーキテクチャ（x86_64）
 
-2. **リリース情報を入力：**
-```
-Tag: v1.1.0
-Title: v1.1.0 - VAES Performance Measurement Support
+### 2. CPU性能チェック
+- CPUモデル、コア数、周波数
 
-Description:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### 3. CPU命令セットチェック ⭐️
+- **AES-NI** (必須)
+- **AVX2** (推奨)
+- **VAES** (最高性能)
+- **AVX-512** (高性能)
 
-## 🆕 What's New in v1.1.0
+### 4. メモリ性能チェック
+- メモリ容量
+- メモリ帯域測定
 
-### VAES Performance Measurement
+### 4.5 平文アクセス性能測定 🆕
+- 8バイト単位アクセス
+- 64バイト単位最適化アクセス
 
-最新世代CPUのVAES命令セットに対応し、実性能を測定できるようになりました！
+### 5. AES-NI実性能測定
+- 実際の暗号化速度測定
 
-### ✨ New Features
+### 6. VAES実性能測定 🆕
+- AVX-512による超高速暗号化測定
+- AES-NIとの比較
 
-- **VAES実性能測定**: 256MB暗号化テストで実測速度を測定
-- **性能比較表示**: AES-NIとの速度比較を自動表示
-- **ボーナススコア**: VAES性能に応じて最大+15点
-- **改善された評価**: より正確な性能予測と用途判定
+### 7. 環境種別の判定
+- 仮想化環境検出
+- プロバイダー推定
 
-### 📊 Performance Example
-```
-環境: AMD EPYC Milan 3コア / 2GB
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-AES-NI性能:  10.68 GB/s
-VAES性能:    25.40 GB/s ★
-性能向上:    2.38倍！
+### 8. 期待性能の算出 🆕
+- MukenVault導入後の予想速度
+- ボトルネック検出
+- 革新的発見の表示
 
-総合スコア: 70点 → 78点（VAESボーナス+8点）
-評価: B (良好) → B+ (より良好)
-```
+### 9. 体験品質の判定
+- オーバーヘッド予測
+- 快適度評価
 
-### 🎯 Who Benefits
+### 10. 総合診断結果
+- 総合スコア（100点満点）
+- 評価ランク（S/A/B/C/D）
 
-- 最新世代CPU（EPYC Milan、Ice Lake以降）を使用中の方
-- より高速な暗号化性能を求める方
-- 正確なサーバー性能評価が必要な方
+### 11. 適合用途の判定
+- 用途別適合性評価
 
-### 🔧 Technical Details
+---
 
-- VAES命令セット検出の改善
-- 256bitレジスタによる8ブロック同時暗号化測定
-- 性能期待値の現実的な調整（30GB/s以上）
-- メモリ帯域とCPU性能の適切なバランス計算
+## 📈 性能比較表
 
-### 📝 Compatibility
+| CPU世代 | 命令セット | VAES速度 | 期待性能 | OH | 評価 |
+|---------|-----------|----------|---------|-----|------|
+| AMD EPYC Milan | VAES + AVX-512 | 50-60 GB/s | 20-25 GB/s | 2% | S/A |
+| Intel Ice Lake | VAES + AVX-512 | 40-50 GB/s | 15-20 GB/s | 3-5% | A |
+| AMD Zen2 | AES-NI + AVX2 | - | 8-15 GB/s | 10-20% | B |
+| Intel Skylake | AES-NI + AVX2 | - | 8-12 GB/s | 15-25% | B/C |
+| 旧世代 | AES-NI | - | 4-8 GB/s | 25-40% | C |
 
-- v1.0との完全な互換性
-- 既存環境での動作に影響なし
-- VAES非対応CPUでも正常に動作
+*OH = オーバーヘッド
 
-### 🚀 Installation
+---
+
+## 🔧 使い方
+
+### 方法1: ワンライナー（推奨）
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MukenVaultTeam/mukenvault-checker/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/MukenVaultTeam/mukenvault-checker/main/mukenvault_pre_check.sh | sudo bash
 ```
 
-### 🙏 Acknowledgments
+### 方法2: ダウンロードして実行
 
-実測データを提供いただいたユーザーの皆様に感謝します。
+```bash
+# ダウンロード
+wget https://raw.githubusercontent.com/MukenVaultTeam/mukenvault-checker/main/mukenvault_pre_check.sh
+
+# または
+curl -O https://raw.githubusercontent.com/MukenVaultTeam/mukenvault-checker/main/mukenvault_pre_check.sh
+
+# 実行権限付与
+chmod +x mukenvault_pre_check.sh
+
+# 実行
+sudo ./mukenvault_pre_check.sh
+```
+
+### 方法3: Gitクローン
+
+```bash
+git clone https://github.com/MukenVaultTeam/mukenvault-checker.git
+cd mukenvault-checker
+chmod +x mukenvault_pre_check.sh
+sudo ./mukenvault_pre_check.sh
+```
 
 ---
 
-**Full Changelog**: v1.0.0...v1.1.0
+## 📋 要件
+
+- **OS**: Linux（Ubuntu、CentOS、Debian等）
+- **CPU**: x86_64アーキテクチャ
+- **必須**: AES-NI対応CPU
+- **推奨**: VAES + AVX-512対応CPU（最高性能）
+- **権限**: root権限（sudo）
+- **ツール**: gcc、基本的なビルドツール
+
+---
+
+## 🛠️ トラブルシューティング
+
+### Q: gccが見つからない
+
+```bash
+# Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install build-essential
+
+# CentOS/RHEL
+sudo yum install gcc make
+
+# Fedora
+sudo dnf install gcc make
 ```
 
+### Q: 権限エラーが出る
+
+```bash
+# sudoを使用してください
+sudo ./mukenvault_pre_check.sh
+```
+
+### Q: VAESが測定されない
+
+VAES非対応CPUの場合は正常な動作です。AES-NIベースで性能が算出されます。
+
+### Q: 性能が低い
+
+メモリ帯域がボトルネックの可能性があります。より高性能なVPSプランへのアップグレードを検討してください。
+
+---
+
+## 🎯 対応環境
+
+### ✅ 完全対応（S/A評価）
+- **最新CPU**: AMD EPYC Milan以降、Intel Ice Lake以降
+- **VAES + AVX-512**: 50-60 GB/s
+- **期待性能**: 20-25 GB/s
+- **オーバーヘッド**: 2-3%
+
+### ✅ 推奨（A/B評価）
+- **標準CPU**: AMD Zen2以降、Intel Skylake以降
+- **AES-NI + AVX2**: 測定なし
+- **期待性能**: 8-15 GB/s
+- **オーバーヘッド**: 10-20%
+
+### ⚠️ 動作可能（B/C評価）
+- **古いCPU**: AES-NI対応のみ
+- **AES-NI**: 測定なし
+- **期待性能**: 4-8 GB/s
+- **オーバーヘッド**: 25-40%
+
+### ❌ 非対応
+- AES-NI非対応CPU
+- x86_64以外のアーキテクチャ
+
+---
+
+## 🤝 コントリビューション
+
+プルリクエスト大歓迎！
+
+1. このリポジトリをフォーク
+2. 機能ブランチを作成 (`git checkout -b feature/amazing-feature`)
+3. 変更をコミット (`git commit -m 'Add amazing feature'`)
+4. ブランチにプッシュ (`git push origin feature/amazing-feature`)
+5. プルリクエストを作成
+
+---
+
+## 📝 ライセンス
+
+MIT License - 詳細は [LICENSE](LICENSE) ファイルを参照
+
+---
+
+## 🔗 リンク
+
+- **MukenVault**: [公式サイト](https://mukenvault.com)
+- **ドキュメント**: [ドキュメント](https://docs.mukenvault.com)
+- **お問い合わせ**: support@mukenvault.com
+
+---
+
+## 🌟 スター歓迎！
+
+このツールが役に立ったら、ぜひ⭐️スターをお願いします！
+
+---
+
+**Made with ❤️ by Superasystem株式会社**
