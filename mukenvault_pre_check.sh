@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #================================================================
-# MukenVault Pre-Installation Checker v1.1.1
-# v1.1に平文測定機能を追加（最小限の修正）
+# MukenVault Pre-Installation Checker v1.3.0
+# AES-NI 4ブロック並列処理による2-3倍高速化
 #================================================================
 
 # 色の定義
@@ -38,7 +38,7 @@ echo -e "${CYAN}"
 cat << "EOF"
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║   MukenVault導入前システムチェッカー v1.1.1                 ║
+║   MukenVault導入前システムチェッカー v1.3.0                 ║
 ║                                                              ║
 ║   あなたの環境でMukenVaultがどれだけの性能を発揮できるかを  ║
 ║   事前診断します                                            ║
@@ -472,15 +472,45 @@ int main() {
     double best_speed = 0.0;
     for (int iter = 0; iter < ITERATIONS; iter++) {
         double start = get_time();
-        for (size_t i = 0; i < SIZE; i += 16) {
-            __m128i block = _mm_loadu_si128((__m128i*)(data + i));
-            block = _mm_xor_si128(block, round_keys[0]);
+        
+        // 4ブロック並列処理
+        for (size_t i = 0; i < SIZE; i += 64) {
+            // プリフェッチ
+            _mm_prefetch((char*)(data + i + 128), _MM_HINT_T0);
+            
+            // 4ブロック同時ロード
+            __m128i b0 = _mm_loadu_si128((__m128i*)(data + i));
+            __m128i b1 = _mm_loadu_si128((__m128i*)(data + i + 16));
+            __m128i b2 = _mm_loadu_si128((__m128i*)(data + i + 32));
+            __m128i b3 = _mm_loadu_si128((__m128i*)(data + i + 48));
+            
+            // 初期XOR
+            b0 = _mm_xor_si128(b0, round_keys[0]);
+            b1 = _mm_xor_si128(b1, round_keys[0]);
+            b2 = _mm_xor_si128(b2, round_keys[0]);
+            b3 = _mm_xor_si128(b3, round_keys[0]);
+            
+            // 10ラウンド並列暗号化
             for (int r = 1; r < 10; r++) {
-                block = _mm_aesenc_si128(block, round_keys[r]);
+                b0 = _mm_aesenc_si128(b0, round_keys[r]);
+                b1 = _mm_aesenc_si128(b1, round_keys[r]);
+                b2 = _mm_aesenc_si128(b2, round_keys[r]);
+                b3 = _mm_aesenc_si128(b3, round_keys[r]);
             }
-            block = _mm_aesenclast_si128(block, round_keys[10]);
-            _mm_storeu_si128((__m128i*)(data + i), block);
+            
+            // 最終ラウンド
+            b0 = _mm_aesenclast_si128(b0, round_keys[10]);
+            b1 = _mm_aesenclast_si128(b1, round_keys[10]);
+            b2 = _mm_aesenclast_si128(b2, round_keys[10]);
+            b3 = _mm_aesenclast_si128(b3, round_keys[10]);
+            
+            // 4ブロック同時書き込み
+            _mm_storeu_si128((__m128i*)(data + i), b0);
+            _mm_storeu_si128((__m128i*)(data + i + 16), b1);
+            _mm_storeu_si128((__m128i*)(data + i + 32), b2);
+            _mm_storeu_si128((__m128i*)(data + i + 48), b3);
         }
+        
         double end = get_time();
         double speed = (SIZE / (1024.0 * 1024.0 * 1024.0)) / (end - start);
         if (speed > best_speed) best_speed = speed;
