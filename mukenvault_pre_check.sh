@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #================================================================
-# MukenVault Pre-Installation Checker v1.3.1
-# gccチェック機能追加、エラーハンドリング強化
+# MukenVault Pre-Installation Checker v1.3.3
+# スコア体系の全面修正 - スコアと評価の一貫性を実現
 #================================================================
 
 # 色の定義
@@ -63,7 +63,7 @@ echo -e "${CYAN}"
 cat << "EOF"
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║   MukenVault導入前システムチェッカー v1.3.1                 ║
+║   MukenVault導入前システムチェッカー v1.3.3                 ║
 ║                                                              ║
 ║   あなたの環境でMukenVaultがどれだけの性能を発揮できるかを  ║
 ║   事前診断します                                            ║
@@ -174,7 +174,7 @@ echo ""
 HAS_AES_NI=$(grep -o 'aes' /proc/cpuinfo | head -1)
 if [ -n "$HAS_AES_NI" ]; then
     echo -e "${GREEN}✅ AES-NI: サポート ✅ 必須機能${NC}"
-    AES_NI_SCORE=30
+    AES_NI_SCORE=20
 else
     echo -e "${RED}❌ AES-NI: 非サポート${NC}"
     echo -e "${RED}MukenVaultはAES-NIが必須です${NC}"
@@ -185,21 +185,21 @@ fi
 HAS_AVX2=$(grep -o 'avx2' /proc/cpuinfo | head -1)
 if [ -n "$HAS_AVX2" ]; then
     echo -e "${GREEN}✅ AVX2: サポート ✅ 性能向上に有効${NC}"
-    AVX2_SCORE=10
+    AVX2_SCORE=5
 else
     echo -e "${YELLOW}⚠️  AVX2: 非サポート${NC}"
     AVX2_SCORE=0
 fi
 
-# VAESチェック
+# VAESチェック（検出だけでは5点のみ）
 HAS_VAES=$(grep -o 'vaes' /proc/cpuinfo | head -1)
 if [ -n "$HAS_VAES" ]; then
     echo -e "${GREEN}✅ VAES: サポート ✅ 最高性能を実現${NC}"
-    VAES_SCORE=15
+    VAES_DETECT_SCORE=5
     VAES_AVAILABLE=1
 else
     echo -e "${YELLOW}ℹ️  VAES: 非サポート${NC}"
-    VAES_SCORE=0
+    VAES_DETECT_SCORE=0
     VAES_AVAILABLE=0
 fi
 
@@ -207,13 +207,15 @@ fi
 HAS_AVX512=$(grep -o 'avx512f' /proc/cpuinfo | head -1)
 if [ -n "$HAS_AVX512" ]; then
     echo -e "${GREEN}✅ AVX-512: サポート ✅ 高性能${NC}"
-    AVX512_SCORE=5
+    AVX512_SCORE=3
+    HAS_AVX512_FLAG=1
 else
     echo -e "${YELLOW}ℹ️  AVX-512: 非サポート${NC}"
     AVX512_SCORE=0
+    HAS_AVX512_FLAG=0
 fi
 
-INSTRUCTION_SCORE=$((AES_NI_SCORE + AVX2_SCORE + VAES_SCORE + AVX512_SCORE))
+INSTRUCTION_SCORE=$((AES_NI_SCORE + AVX2_SCORE + VAES_DETECT_SCORE + AVX512_SCORE))
 
 echo ""
 echo "【命令セット評価】"
@@ -324,7 +326,7 @@ MEM_SCORE=$((MEM_CAPACITY_SCORE + MEM_BANDWIDTH_SCORE))
 echo ""
 
 # =================================================================
-# 4.5 平文アクセス性能測定（NEW!）
+# 4.5 平文アクセス性能測定
 # =================================================================
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${CYAN}  4.5 平文アクセス性能測定（ベースライン）${NC}"
@@ -335,7 +337,7 @@ echo "平文アクセス速度を測定中..."
 echo "（これは暗号化していない通常のメモリアクセス速度です）"
 echo ""
 
-# 8バイト単位平文アクセステスト（volatile修正版）
+# 8バイト単位平文アクセステスト
 cat > "$TEMP_DIR/plaintext_8byte.c" << 'EOFCODE'
 #include <stdio.h>
 #include <stdlib.h>
@@ -382,7 +384,7 @@ PLAINTEXT_8BYTE=$("$TEMP_DIR/plaintext_8byte")
 
 echo "平文アクセス（8バイト単位）: $PLAINTEXT_8BYTE GB/s"
 
-# 64バイト単位平文アクセステスト（volatile修正版）
+# 64バイト単位平文アクセステスト
 cat > "$TEMP_DIR/plaintext_64byte.c" << 'EOFCODE'
 #include <stdio.h>
 #include <stdlib.h>
@@ -441,6 +443,7 @@ echo "この数値はMukenVault「なし」の状態でのメモリアクセス�
 echo "後ほど測定する暗号化速度と比較することで、実際のオーバーヘッドがわかります。"
 echo ""
 
+
 # =================================================================
 # 5. AES-NI実性能測定
 # =================================================================
@@ -498,24 +501,19 @@ int main() {
     for (int iter = 0; iter < ITERATIONS; iter++) {
         double start = get_time();
         
-        // 4ブロック並列処理
         for (size_t i = 0; i < SIZE; i += 64) {
-            // プリフェッチ
             _mm_prefetch((char*)(data + i + 128), _MM_HINT_T0);
             
-            // 4ブロック同時ロード
             __m128i b0 = _mm_loadu_si128((__m128i*)(data + i));
             __m128i b1 = _mm_loadu_si128((__m128i*)(data + i + 16));
             __m128i b2 = _mm_loadu_si128((__m128i*)(data + i + 32));
             __m128i b3 = _mm_loadu_si128((__m128i*)(data + i + 48));
             
-            // 初期XOR
             b0 = _mm_xor_si128(b0, round_keys[0]);
             b1 = _mm_xor_si128(b1, round_keys[0]);
             b2 = _mm_xor_si128(b2, round_keys[0]);
             b3 = _mm_xor_si128(b3, round_keys[0]);
             
-            // 10ラウンド並列暗号化
             for (int r = 1; r < 10; r++) {
                 b0 = _mm_aesenc_si128(b0, round_keys[r]);
                 b1 = _mm_aesenc_si128(b1, round_keys[r]);
@@ -523,13 +521,11 @@ int main() {
                 b3 = _mm_aesenc_si128(b3, round_keys[r]);
             }
             
-            // 最終ラウンド
             b0 = _mm_aesenclast_si128(b0, round_keys[10]);
             b1 = _mm_aesenclast_si128(b1, round_keys[10]);
             b2 = _mm_aesenclast_si128(b2, round_keys[10]);
             b3 = _mm_aesenclast_si128(b3, round_keys[10]);
             
-            // 4ブロック同時書き込み
             _mm_storeu_si128((__m128i*)(data + i), b0);
             _mm_storeu_si128((__m128i*)(data + i + 16), b1);
             _mm_storeu_si128((__m128i*)(data + i + 32), b2);
@@ -571,14 +567,15 @@ fi
 echo ""
 
 # =================================================================
-# 6. VAES実性能測定（最新CPUボーナス）
+# 6. VAES実性能測定（256bit/512bit両対応）
 # =================================================================
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${CYAN}  6. VAES実性能測定（最新CPUボーナス）${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-VAES_BONUS=0
+VAES_PERF_BONUS=0
+VAES_SPEED="0"
 
 if [ "$VAES_AVAILABLE" -eq 1 ]; then
     echo "VAES暗号化性能を測定中..."
@@ -591,8 +588,6 @@ if [ "$VAES_AVAILABLE" -eq 1 ]; then
 #include <string.h>
 #include <sys/time.h>
 #include <stdint.h>
-#include <immintrin.h>
-#include <x86intrin.h>
 
 #define SIZE (256 * 1024 * 1024)
 #define ITERATIONS 5
@@ -604,7 +599,9 @@ double get_time() {
 }
 
 #if defined(__AVX512F__) && defined(__VAES__)
-void keyless_vaes_encrypt(uint8_t* data, size_t size, const uint8_t* key) {
+#include <immintrin.h>
+
+void keyless_vaes_encrypt_512(uint8_t* data, size_t size, const uint8_t* key) {
     __m128i base_key = _mm_loadu_si128((__m128i*)key);
     __m512i round_keys[15];
     
@@ -646,6 +643,52 @@ void keyless_vaes_encrypt(uint8_t* data, size_t size, const uint8_t* key) {
         _mm512_storeu_si512(&ptr[i + 3], b3);
     }
 }
+
+#elif defined(__AVX2__) && defined(__VAES__)
+#include <immintrin.h>
+
+void keyless_vaes_encrypt_256(uint8_t* data, size_t size, const uint8_t* key) {
+    __m128i base_key = _mm_loadu_si128((__m128i*)key);
+    __m256i round_keys[15];
+    
+    for (int i = 0; i < 15; i++) {
+        round_keys[i] = _mm256_broadcastsi128_si256(base_key);
+    }
+    
+    size_t blocks = size / 128;
+    __m256i* ptr = (__m256i*)data;
+    
+    for (size_t i = 0; i < blocks; i += 4) {
+        _mm_prefetch((char*)&ptr[i + 8], _MM_HINT_T0);
+        
+        __m256i b0 = _mm256_loadu_si256(&ptr[i]);
+        __m256i b1 = _mm256_loadu_si256(&ptr[i + 1]);
+        __m256i b2 = _mm256_loadu_si256(&ptr[i + 2]);
+        __m256i b3 = _mm256_loadu_si256(&ptr[i + 3]);
+        
+        b0 = _mm256_xor_si256(b0, round_keys[0]);
+        b1 = _mm256_xor_si256(b1, round_keys[0]);
+        b2 = _mm256_xor_si256(b2, round_keys[0]);
+        b3 = _mm256_xor_si256(b3, round_keys[0]);
+        
+        for (int r = 1; r < 14; r++) {
+            b0 = _mm256_aesenc_epi128(b0, round_keys[r]);
+            b1 = _mm256_aesenc_epi128(b1, round_keys[r]);
+            b2 = _mm256_aesenc_epi128(b2, round_keys[r]);
+            b3 = _mm256_aesenc_epi128(b3, round_keys[r]);
+        }
+        
+        b0 = _mm256_aesenclast_epi128(b0, round_keys[14]);
+        b1 = _mm256_aesenclast_epi128(b1, round_keys[14]);
+        b2 = _mm256_aesenclast_epi128(b2, round_keys[14]);
+        b3 = _mm256_aesenclast_epi128(b3, round_keys[14]);
+        
+        _mm256_storeu_si256(&ptr[i], b0);
+        _mm256_storeu_si256(&ptr[i + 1], b1);
+        _mm256_storeu_si256(&ptr[i + 2], b2);
+        _mm256_storeu_si256(&ptr[i + 3], b3);
+    }
+}
 #endif
 
 int main() {
@@ -660,20 +703,44 @@ int main() {
     }
     
     memset(data, 0xAA, SIZE);
-    
-    keyless_vaes_encrypt(data, SIZE, key);
+    keyless_vaes_encrypt_512(data, SIZE, key);
     
     double best_speed = 0.0;
     for (int iter = 0; iter < ITERATIONS; iter++) {
         double start = get_time();
-        keyless_vaes_encrypt(data, SIZE, key);
+        keyless_vaes_encrypt_512(data, SIZE, key);
         double end = get_time();
         double speed = (SIZE / (1024.0 * 1024.0 * 1024.0)) / (end - start);
         if (speed > best_speed) best_speed = speed;
     }
     
     printf("%.2f\n", best_speed);
+    free(data);
+    return 0;
     
+#elif defined(__AVX2__) && defined(__VAES__)
+    uint8_t* data = aligned_alloc(64, SIZE);
+    uint8_t key[16] = {0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0,
+                       0x11, 0x11, 0x11, 0x11, 0x22, 0x22, 0x22, 0x22};
+    
+    if (!data) {
+        printf("0.0\n");
+        return 1;
+    }
+    
+    memset(data, 0xAA, SIZE);
+    keyless_vaes_encrypt_256(data, SIZE, key);
+    
+    double best_speed = 0.0;
+    for (int iter = 0; iter < ITERATIONS; iter++) {
+        double start = get_time();
+        keyless_vaes_encrypt_256(data, SIZE, key);
+        double end = get_time();
+        double speed = (SIZE / (1024.0 * 1024.0 * 1024.0)) / (end - start);
+        if (speed > best_speed) best_speed = speed;
+    }
+    
+    printf("%.2f\n", best_speed);
     free(data);
     return 0;
 #else
@@ -683,54 +750,71 @@ int main() {
 }
 EOFCODE
 
-    gcc -O3 -march=native -mavx512f -mvaes -o "$TEMP_DIR/vaes_benchmark" "$TEMP_DIR/vaes_benchmark.c" 2>/dev/null
-    if [ $? -eq 0 ]; then
-        VAES_SPEED=$("$TEMP_DIR/vaes_benchmark" 2>/dev/null || echo "0")
+    # 512bit版を試行
+    if [ "$HAS_AVX512_FLAG" -eq 1 ]; then
+        gcc -O3 -march=native -mavx512f -mvaes -o "$TEMP_DIR/vaes_benchmark" "$TEMP_DIR/vaes_benchmark.c" 2>/dev/null
+        if [ $? -eq 0 ]; then
+            VAES_SPEED=$("$TEMP_DIR/vaes_benchmark" 2>/dev/null || echo "0")
+            if [ "$VAES_SPEED" != "0" ] && [ -n "$VAES_SPEED" ]; then
+                echo -e "${GREEN}✅ VAES 512bit版（AVX-512）で測定成功${NC}"
+            else
+                VAES_SPEED="0"
+            fi
+        fi
+    fi
+    
+    # 256bit版にフォールバック
+    if [ "$VAES_SPEED" = "0" ]; then
+        gcc -O3 -march=native -mavx2 -mvaes -o "$TEMP_DIR/vaes_benchmark" "$TEMP_DIR/vaes_benchmark.c" 2>/dev/null
+        if [ $? -eq 0 ]; then
+            VAES_SPEED=$("$TEMP_DIR/vaes_benchmark" 2>/dev/null || echo "0")
+            if [ "$VAES_SPEED" != "0" ] && [ -n "$VAES_SPEED" ]; then
+                echo -e "${GREEN}✅ VAES 256bit版（AVX2）で測定成功${NC}"
+            fi
+        fi
+    fi
+    
+    # 結果表示とスコア計算
+    if [ "$VAES_SPEED" != "0" ] && [ -n "$VAES_SPEED" ]; then
+        echo "VAES暗号化速度: $VAES_SPEED GB/s"
+        echo ""
         
-        if [ "$VAES_SPEED" != "0" ]; then
-            echo "VAES暗号化速度: $VAES_SPEED GB/s"
-            echo ""
-            
-            # VAES vs AES-NI比較
-            RATIO=$(awk "BEGIN {printf \"%.2f\", $VAES_SPEED / $AES_SPEED}")
-            echo "【VAES効果】"
-            echo "  AES-NI比: ${RATIO}倍高速！"
-            echo "  → VAESは通常のAES-NIより大幅に高速です"
-            echo ""
-            
-            # VAESボーナススコア計算（控えめに調整）
-            VAES_SPEED_INT=$(awk "BEGIN {print int($VAES_SPEED)}")
-            if [ "$VAES_SPEED_INT" -ge 60 ]; then
-                VAES_BONUS=10
-            elif [ "$VAES_SPEED_INT" -ge 50 ]; then
-                VAES_BONUS=8
-            elif [ "$VAES_SPEED_INT" -ge 40 ]; then
-                VAES_BONUS=7
-            elif [ "$VAES_SPEED_INT" -ge 30 ]; then
-                VAES_BONUS=6
-            elif [ "$VAES_SPEED_INT" -ge 20 ]; then
-                VAES_BONUS=5
-            elif [ "$VAES_SPEED_INT" -ge 10 ]; then
-                VAES_BONUS=3
-            else
-                VAES_BONUS=2
-            fi
-            
-            if [ "$VAES_SPEED_INT" -ge 20 ]; then
-                echo -e "${GREEN}ℹ️  VAES性能: $VAES_SPEED GB/s${NC}"
-            else
-                echo -e "${YELLOW}ℹ️  VAES性能: $VAES_SPEED GB/s${NC}"
-            fi
+        RATIO=$(awk "BEGIN {printf \"%.2f\", $VAES_SPEED / $AES_SPEED}")
+        echo "【VAES効果】"
+        echo "  AES-NI比: ${RATIO}倍高速！"
+        echo "  → VAESは通常のAES-NIより大幅に高速です"
+        echo ""
+        
+        # VAES性能ボーナス（測定成功時のみ）
+        VAES_SPEED_INT=$(awk "BEGIN {print int($VAES_SPEED)}")
+        if [ "$VAES_SPEED_INT" -ge 60 ]; then
+            VAES_PERF_BONUS=15
+            echo -e "${GREEN}✅ VAES性能: $VAES_SPEED GB/s (驚異的！)${NC}"
+        elif [ "$VAES_SPEED_INT" -ge 40 ]; then
+            VAES_PERF_BONUS=12
+            echo -e "${GREEN}✅ VAES性能: $VAES_SPEED GB/s (優秀)${NC}"
+        elif [ "$VAES_SPEED_INT" -ge 30 ]; then
+            VAES_PERF_BONUS=10
+            echo -e "${GREEN}✅ VAES性能: $VAES_SPEED GB/s (良好)${NC}"
+        elif [ "$VAES_SPEED_INT" -ge 20 ]; then
+            VAES_PERF_BONUS=8
+            echo -e "${GREEN}✅ VAES性能: $VAES_SPEED GB/s (標準)${NC}"
+        elif [ "$VAES_SPEED_INT" -ge 10 ]; then
+            VAES_PERF_BONUS=5
+            echo -e "${YELLOW}ℹ️  VAES性能: $VAES_SPEED GB/s${NC}"
         else
-            echo -e "${YELLOW}⚠️  VAES測定失敗${NC}"
+            VAES_PERF_BONUS=2
+            echo -e "${YELLOW}ℹ️  VAES性能: $VAES_SPEED GB/s${NC}"
         fi
     else
-        echo -e "${YELLOW}⚠️  VAESベンチマーク コンパイル失敗${NC}"
+        echo -e "${YELLOW}⚠️  VAES測定失敗${NC}"
+        echo "（VAES命令セット検出: +5点、測定失敗: +0点）"
     fi
 else
     echo -e "${YELLOW}ℹ️  VAES非対応CPUのため、この測定はスキップされます${NC}"
 fi
 echo ""
+
 
 # =================================================================
 # 7. 環境種別の判定
@@ -740,7 +824,6 @@ echo -e "${CYAN}  7. 環境種別の判定${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-# 仮想化チェック
 if [ -e /sys/hypervisor/type ]; then
     HYPERVISOR=$(cat /sys/hypervisor/type)
     echo -e "${YELLOW}ℹ️  仮想化環境: はい（$HYPERVISOR）${NC}"
@@ -753,7 +836,6 @@ else
     IS_VIRTUAL=0
 fi
 
-# プロバイダー推定
 PROVIDER="不明"
 if [ -e /sys/devices/virtual/dmi/id/sys_vendor ]; then
     SYS_VENDOR=$(cat /sys/devices/virtual/dmi/id/sys_vendor 2>/dev/null)
@@ -779,8 +861,7 @@ echo -e "${CYAN}  8. 期待性能の算出${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-# ボトルネックの特定
-if [ "$VAES_AVAILABLE" -eq 1 ] && [ -n "$VAES_SPEED" ] && [ "$VAES_SPEED" != "0" ]; then
+if [ "$VAES_AVAILABLE" -eq 1 ] && [ "$VAES_SPEED" != "0" ] && [ -n "$VAES_SPEED" ]; then
     BASE_SPEED=$VAES_SPEED
     PERF_BASIS="VAES"
 else
@@ -788,7 +869,6 @@ else
     PERF_BASIS="AES-NI"
 fi
 
-# メモリ帯域との比較（実測値ベース）
 BOTTLENECK="CPU性能"
 EXPECTED_SPEED=$BASE_SPEED
 
@@ -796,9 +876,7 @@ MEM_BW_FLOAT=$(awk "BEGIN {printf \"%.2f\", $MEM_BANDWIDTH}")
 BASE_SPEED_FLOAT=$(awk "BEGIN {printf \"%.2f\", $BASE_SPEED}")
 PLAINTEXT_64B_FLOAT=$(awk "BEGIN {printf \"%.2f\", $PLAINTEXT_64BYTE}")
 
-# 実測平文性能を優先的に使用
 if awk "BEGIN {exit !($PLAINTEXT_64B_FLOAT > $MEM_BW_FLOAT)}"; then
-    # 平文64バイト測定値の方が信頼性が高い
     ACTUAL_MEM_PERF=$PLAINTEXT_64B_FLOAT
 else
     ACTUAL_MEM_PERF=$MEM_BW_FLOAT
@@ -806,15 +884,11 @@ fi
 
 if awk "BEGIN {exit !($ACTUAL_MEM_PERF < $BASE_SPEED_FLOAT)}"; then
     BOTTLENECK="メモリ帯域"
-    # メモリがボトルネックの場合、平文性能とほぼ同じ
-    # （VAES処理が十分速いため、オーバーヘッドはほぼゼロ）
     EXPECTED_SPEED=$(awk "BEGIN {printf \"%.2f\", $ACTUAL_MEM_PERF * 0.98}")
 else
-    # CPU性能の85%を期待値とする
     EXPECTED_SPEED=$(awk "BEGIN {printf \"%.2f\", $BASE_SPEED * 0.85}")
 fi
 
-# 性能ティアの決定
 EXPECTED_SPEED_INT=$(awk "BEGIN {print int($EXPECTED_SPEED)}")
 if [ "$EXPECTED_SPEED_INT" -ge 30 ]; then
     PERF_TIER="Enterprise"
@@ -833,7 +907,6 @@ echo "  ボトルネック: $BOTTLENECK"
 echo "  性能ティア: $PERF_TIER"
 echo ""
 
-# 革新的な発見の表示
 if [ "$BOTTLENECK" = "メモリ帯域" ] && awk "BEGIN {exit !($BASE_SPEED_FLOAT > $ACTUAL_MEM_PERF * 2)}"; then
     echo "【革新的発見】"
     echo "  平文アクセス:    ${PLAINTEXT_64B_FLOAT} GB/s"
@@ -854,7 +927,6 @@ echo -e "${CYAN}  9. 体験品質の判定${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-# オーバーヘッド予測
 if [ "$EXPECTED_SPEED_INT" -ge 30 ]; then
     QUALITY="🟢 快適"
     OVERHEAD="1-3%"
@@ -891,7 +963,7 @@ else
 fi
 echo ""
 
-if [ "$VAES_AVAILABLE" -eq 1 ] && [ -n "$VAES_SPEED" ] && [ "$VAES_SPEED" != "0" ]; then
+if [ "$VAES_AVAILABLE" -eq 1 ] && [ "$VAES_SPEED" != "0" ] && [ -n "$VAES_SPEED" ]; then
     echo -e "${GREEN}🌟 VAES対応の恩恵 🌟${NC}"
     echo "  この環境は最新世代CPUを搭載しており、"
     echo "  MukenVaultが最高のパフォーマンスを発揮できます！"
@@ -908,15 +980,18 @@ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # 総合スコア計算
-TOTAL_SCORE=$((ARCH_SCORE + CPU_SCORE + INSTRUCTION_SCORE + MEM_SCORE + AES_PERF_SCORE + QUALITY_SCORE + VAES_BONUS))
+TOTAL_SCORE=$((ARCH_SCORE + CPU_SCORE + INSTRUCTION_SCORE + MEM_SCORE + AES_PERF_SCORE + QUALITY_SCORE + VAES_PERF_BONUS))
 
-# スコア表示
+# スコア上限を100に制限
+if [ "$TOTAL_SCORE" -gt 100 ]; then
+    TOTAL_SCORE=100
+fi
+
 echo "総合スコア: $TOTAL_SCORE/$MAX_SCORE点 ($((TOTAL_SCORE * 100 / MAX_SCORE))%)"
 echo ""
 
-# 総合評価（期待性能ベース）
+# 総合評価（期待性能ベースで判定）
 echo "【総合評価】"
-EXPECTED_SPEED_INT=$(awk "BEGIN {print int($EXPECTED_SPEED)}")
 
 if [ "$EXPECTED_SPEED_INT" -ge 30 ]; then
     echo -e "  評価: ${GREEN}S (最高)${NC}"
@@ -1005,7 +1080,8 @@ echo ""
     echo "  Plaintext 8-byte: $PLAINTEXT_8BYTE GB/s"
     echo "  Plaintext 64-byte: $PLAINTEXT_64BYTE GB/s"
     echo "  AES-NI Speed: $AES_SPEED GB/s"
-    if [ "$VAES_AVAILABLE" -eq 1 ] && [ -n "$VAES_SPEED" ] && [ "$VAES_SPEED" != "0" ]; then
+    if [ "$VAES_AVAILABLE" -eq 1 ] && [ "$VAES_SPEED" != "0" ] && [ -n "$VAES_SPEED" ]; then
+        RATIO=$(awk "BEGIN {printf \"%.2f\", $VAES_SPEED / $AES_SPEED}")
         echo "  VAES Speed: $VAES_SPEED GB/s"
         echo "  VAES vs AES-NI: ${RATIO}x faster"
     fi
