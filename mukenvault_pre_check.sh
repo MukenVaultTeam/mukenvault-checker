@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #================================================================
-# MukenVault Pre-Installation Checker v1.3.0
-# AES-NI 4ブロック並列処理による2-3倍高速化
+# MukenVault Pre-Installation Checker v1.3.1
+# gccチェック機能追加、エラーハンドリング強化
 #================================================================
 
 # 色の定義
@@ -22,6 +22,31 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+# gccチェック
+if ! command -v gcc &> /dev/null; then
+    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${RED}  エラー: gccが見つかりません${NC}"
+    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo "このスクリプトを実行するには、gccコンパイラが必要です。"
+    echo ""
+    echo -e "${CYAN}【インストール方法】${NC}"
+    echo ""
+    echo "  Ubuntu/Debian系:"
+    echo -e "    ${GREEN}sudo apt-get update${NC}"
+    echo -e "    ${GREEN}sudo apt-get install build-essential${NC}"
+    echo ""
+    echo "  CentOS/RHEL系:"
+    echo -e "    ${GREEN}sudo yum install gcc${NC}"
+    echo ""
+    echo "  Fedora系:"
+    echo -e "    ${GREEN}sudo dnf install gcc${NC}"
+    echo ""
+    echo "インストール後、再度このスクリプトを実行してください。"
+    echo ""
+    exit 1
+fi
+
 # 一時ディレクトリ作成
 TEMP_DIR=$(mktemp -d)
 cleanup() {
@@ -38,7 +63,7 @@ echo -e "${CYAN}"
 cat << "EOF"
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║   MukenVault導入前システムチェッカー v1.3.0                 ║
+║   MukenVault導入前システムチェッカー v1.3.1                 ║
 ║                                                              ║
 ║   あなたの環境でMukenVaultがどれだけの性能を発揮できるかを  ║
 ║   事前診断します                                            ║
