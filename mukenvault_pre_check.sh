@@ -227,7 +227,7 @@ analyze_provider_strategy() {
 }
 
 #================================================================
-# 推奨用途判定関数（プロバイダー特性込み）
+# 推奨用途判定関数（改良版: スペック総合評価）
 #================================================================
 get_recommended_use_cases() {
     local expected_speed_int="$1"
@@ -236,59 +236,110 @@ get_recommended_use_cases() {
     
     local use_cases=""
     
-    if [ "$expected_speed_int" -ge 30 ]; then
-        use_cases="✅ エンタープライズWebアプリ
+    # スペック総合評価
+    local spec_tier="basic"
+    if [ "$CPU_CORES" -ge 8 ] && [ "$MEM_TOTAL_INT" -ge 16 ] && [ "$VAES_AVAILABLE" -eq 1 ]; then
+        spec_tier="enterprise"
+    elif [ "$CPU_CORES" -ge 4 ] && [ "$MEM_TOTAL_INT" -ge 8 ] && [ "$VAES_AVAILABLE" -eq 1 ]; then
+        spec_tier="business"
+    elif [ "$CPU_CORES" -ge 4 ] && [ "$MEM_TOTAL_INT" -ge 4 ]; then
+        spec_tier="standard"
+    fi
+    
+    # Enterprise tier (8コア以上 + 16GB以上 + VAES)
+    if [ "$spec_tier" = "enterprise" ]; then
+        if [ "$expected_speed_int" -ge 20 ]; then
+            use_cases="✅ エンタープライズWebアプリケーション
 ✅ 高トラフィックAPIサーバー
 ✅ データベースサーバー（大規模）
-✅ リアルタイム処理
-✅ AI/ML推論サーバー
+✅ コンテナオーケストレーション（Kubernetes）
+✅ リアルタイム処理・ストリーミング
 
-【推奨プロバイダー】
-このクラスの性能は、以下のような用途に最適です:
-• 金融・医療系システム（コンプライアンス対応）
+【エンタープライズクラス】
+このスペックは、以下のような本番環境に最適です:
+• 中堅〜大企業の基幹システム
 • SaaS製品の本番環境
-• データ分析基盤"
-    elif [ "$expected_speed_int" -ge 15 ]; then
-        use_cases="✅ Webアプリケーション
+• 24/365稼働の重要システム
+• 月間100万PV超のWebサービス"
+        elif [ "$expected_speed_int" -ge 12 ]; then
+            use_cases="✅ ビジネスWebアプリケーション
+✅ APIサーバー（中〜高トラフィック）
+✅ データベースサーバー（中〜大規模）
+✅ コンテナ環境（Docker Compose/小規模K8s）
+✅ CI/CDパイプライン
+
+【ビジネスクラス】
+このスペックは、以下のような用途に最適です:
+• 中小企業の本番システム
+• スタートアップのプロダクション環境
+• 月間10万〜100万PVのWebサービス
+• 部門サーバー・グループウェア"
+        else
+            use_cases="✅ Webアプリケーション
+✅ APIサーバー
+✅ データベースサーバー（中規模）
+✅ 開発・ステージング環境
+⚠️  高負荷本番環境（ベンチマーク推奨）
+
+【準ビジネスクラス】
+このスペックは、以下のような用途に適しています:
+• 中小規模の本番システム
+• 開発・ステージング環境
+• 社内向けWebアプリケーション"
+        fi
+    
+    # Business tier (4コア以上 + 8GB以上 + VAES)
+    elif [ "$spec_tier" = "business" ]; then
+        if [ "$expected_speed_int" -ge 15 ]; then
+            use_cases="✅ Webアプリケーション
 ✅ APIサーバー
 ✅ データベースサーバー（中規模）
 ✅ ファイルサーバー
 
-【推奨プロバイダー】
+【ビジネス向け】
 このクラスの性能は、以下のような用途に最適です:
 • 中小企業の業務システム
 • スタートアップのMVP環境
 • 中規模ECサイト"
-    elif [ "$expected_speed_int" -ge 8 ]; then
+        else
+            use_cases="✅ 軽量Webアプリケーション
+✅ 開発・テスト環境
+✅ ファイルサーバー
+✅ CI/CD環境
+
+【開発・テスト向け】
+このクラスの性能は、以下のような用途に適しています:
+• 開発・検証環境
+• 社内ツール
+• プロトタイプ"
+        fi
+    
+    # Standard tier
+    elif [ "$spec_tier" = "standard" ]; then
         use_cases="✅ 静的サイト・ブログ
 ✅ ファイルサーバー
 ✅ 開発・テスト環境
 ✅ バックアップサーバー
 ⚠️  軽量Webアプリ（トライアル推奨）
 
-【推奨プロバイダー】
+【標準向け】
 このクラスの性能は、以下のような用途に最適です:
 • 個人プロジェクト
 • 社内ツール・イントラネット
 • CI/CD環境"
-    elif [ "$expected_speed_int" -ge 4 ]; then
+    
+    # Basic tier
+    else
         use_cases="✅ 静的コンテンツ配信
 ✅ 個人用途
 ⚠️  開発・検証環境（負荷制限あり）
 ❌ 本番Webアプリ
 
-【推奨プロバイダー】
+【エントリー向け】
 このクラスの性能は、以下のような用途に限定されます:
 • 個人ブログ
 • 学習用環境
 • デモ・プロトタイプ"
-    else
-        use_cases="⚠️  検証・学習用途のみ
-❌ 本番環境
-❌ 高負荷システム
-
-【推奨プロバイダー】
-⚠️  より高スペックなプランへのアップグレードを推奨します"
     fi
     
     echo "$use_cases"
