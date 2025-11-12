@@ -394,17 +394,17 @@ echo ""
 
 if [ "$CPU_GENERATION" != "Unknown" ]; then
     # 世代評価の表示
-    local year_num=$(echo "$CPU_YEAR" | grep -oE "[0-9]{4}" | head -1)
-    if [ -n "$year_num" ] && [ "$year_num" -ge 2021 ]; then
+    CPU_YEAR_NUM=$(echo "$CPU_YEAR" | grep -oE "[0-9]{4}" | head -1)
+    if [ -n "$CPU_YEAR_NUM" ] && [ "$CPU_YEAR_NUM" -ge 2021 ]; then
         echo -e "  世代評価: ${GREEN}🟢 最新世代${NC}"
         echo "  MukenVault適合度: ★★★★★ (最高)"
-    elif [ -n "$year_num" ] && [ "$year_num" -ge 2019 ]; then
+    elif [ -n "$CPU_YEAR_NUM" ] && [ "$CPU_YEAR_NUM" -ge 2019 ]; then
         echo -e "  世代評価: ${GREEN}🟡 現行世代${NC}"
         echo "  MukenVault適合度: ★★★★☆ (優秀)"
-    elif [ -n "$year_num" ] && [ "$year_num" -ge 2017 ]; then
+    elif [ -n "$CPU_YEAR_NUM" ] && [ "$CPU_YEAR_NUM" -ge 2017 ]; then
         echo -e "  世代評価: ${YELLOW}🟠 準現行世代${NC}"
         echo "  MukenVault適合度: ★★★☆☆ (標準)"
-    elif [ -n "$year_num" ] && [ "$year_num" -ge 2015 ]; then
+    elif [ -n "$CPU_YEAR_NUM" ] && [ "$CPU_YEAR_NUM" -ge 2015 ]; then
         echo -e "  世代評価: ${YELLOW}🔴 旧世代${NC}"
         echo "  MukenVault適合度: ★★☆☆☆ (制限あり)"
     else
