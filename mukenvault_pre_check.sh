@@ -1,8 +1,11 @@
 #!/bin/bash
 
 #================================================================
-# MukenVault Pre-Installation Checker v1.3.3
-# スコア体系の全面修正 - スコアと評価の一貫性を実現
+# MukenVault Pre-Installation Checker v1.4.0
+# 新機能:
+# - CPU世代自動判定
+# - プロバイダー戦略分析
+# - スコアリング精緻化
 #================================================================
 
 # 色の定義
@@ -63,10 +66,12 @@ echo -e "${CYAN}"
 cat << "EOF"
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║   MukenVault導入前システムチェッカー v1.3.3                 ║
+║   MukenVault導入前システムチェッカー v1.4.0                 ║
 ║                                                              ║
 ║   あなたの環境でMukenVaultがどれだけの性能を発揮できるかを  ║
 ║   事前診断します                                            ║
+║                                                              ║
+║   🆕 CPU世代判定 / プロバイダー分析機能追加                ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
 EOF
@@ -80,6 +85,214 @@ echo ""
 # スコア変数初期化
 TOTAL_SCORE=0
 MAX_SCORE=100
+
+#================================================================
+# CPU世代判定関数
+#================================================================
+detect_cpu_generation() {
+    local cpu_model="$1"
+    local generation=""
+    local year=""
+    local arch=""
+    local gen_score=0
+    
+    # Intel系の判定
+    if echo "$cpu_model" | grep -qi "Sapphire Rapids"; then
+        generation="Sapphire Rapids"
+        year="2023"
+        arch="Golden Cove"
+        gen_score=10
+    elif echo "$cpu_model" | grep -qi "Icelake\|Ice Lake"; then
+        generation="Ice Lake"
+        year="2019-2021"
+        arch="Sunny Cove"
+        gen_score=9
+    elif echo "$cpu_model" | grep -qi "Cascade Lake"; then
+        generation="Cascade Lake"
+        year="2019"
+        arch="Skylake改良版"
+        gen_score=7
+    elif echo "$cpu_model" | grep -qi "Skylake"; then
+        generation="Skylake"
+        year="2015-2017"
+        arch="Skylake"
+        gen_score=5
+    elif echo "$cpu_model" | grep -qi "Broadwell"; then
+        generation="Broadwell"
+        year="2014-2015"
+        arch="Broadwell"
+        gen_score=4
+    elif echo "$cpu_model" | grep -qi "Haswell"; then
+        generation="Haswell"
+        year="2013-2014"
+        arch="Haswell"
+        gen_score=3
+    # Xeon型番からの判定
+    elif echo "$cpu_model" | grep -qiE "E3-[0-9]{4} v6"; then
+        generation="Kaby Lake"
+        year="2017"
+        arch="Kaby Lake"
+        gen_score=6
+    elif echo "$cpu_model" | grep -qiE "E3-[0-9]{4} v5"; then
+        generation="Skylake"
+        year="2015-2016"
+        arch="Skylake"
+        gen_score=5
+    elif echo "$cpu_model" | grep -qiE "E5-[0-9]{4} v4"; then
+        generation="Broadwell"
+        year="2016"
+        arch="Broadwell-EP"
+        gen_score=4
+    elif echo "$cpu_model" | grep -qiE "E5-[0-9]{4} v3"; then
+        generation="Haswell"
+        year="2014"
+        arch="Haswell-EP"
+        gen_score=3
+    
+    # AMD系の判定
+    elif echo "$cpu_model" | grep -qi "EPYC.*Genoa"; then
+        generation="EPYC Genoa"
+        year="2022-2023"
+        arch="Zen 4"
+        gen_score=10
+    elif echo "$cpu_model" | grep -qi "EPYC-Milan\|Milan"; then
+        generation="EPYC Milan"
+        year="2021"
+        arch="Zen 3"
+        gen_score=9
+    elif echo "$cpu_model" | grep -qi "EPYC-Rome\|Rome"; then
+        generation="EPYC Rome"
+        year="2019"
+        arch="Zen 2"
+        gen_score=7
+    elif echo "$cpu_model" | grep -qi "EPYC-Naples\|Naples"; then
+        generation="EPYC Naples"
+        year="2017"
+        arch="Zen 1"
+        gen_score=5
+    
+    else
+        generation="Unknown"
+        year="不明"
+        arch="不明"
+        gen_score=0
+    fi
+    
+    echo "$generation|$year|$arch|$gen_score"
+}
+
+#================================================================
+# プロバイダー戦略分析関数
+#================================================================
+analyze_provider_strategy() {
+    local cpu_gen="$1"
+    local cpu_year="$2"
+    local vaes_support="$3"
+    local expected_speed="$4"
+    
+    local strategy=""
+    local target=""
+    local stars=0
+    
+    # CPU世代から戦略を判定
+    local year_int=$(echo "$cpu_year" | grep -oE "[0-9]{4}" | head -1)
+    
+    if [ -z "$year_int" ]; then
+        year_int=0
+    fi
+    
+    if [ "$year_int" -ge 2021 ] && [ "$vaes_support" = "yes" ]; then
+        strategy="🟢 最新世代重視"
+        target="本番環境・高付加価値サービス"
+        stars=5
+    elif [ "$year_int" -ge 2019 ] && [ "$vaes_support" = "yes" ]; then
+        strategy="🟡 バランス型"
+        target="中規模本番環境・開発環境"
+        stars=4
+    elif [ "$year_int" -ge 2017 ]; then
+        strategy="🟠 コスト重視"
+        target="開発・ステージング環境"
+        stars=3
+    elif [ "$year_int" -ge 2015 ]; then
+        strategy="🔴 格安特化"
+        target="バックアップ・検証環境のみ"
+        stars=2
+    else
+        strategy="⚪ 不明"
+        target="判定不可"
+        stars=1
+    fi
+    
+    echo "$strategy|$target|$stars"
+}
+
+#================================================================
+# 推奨用途判定関数（プロバイダー特性込み）
+#================================================================
+get_recommended_use_cases() {
+    local expected_speed_int="$1"
+    local cpu_gen="$2"
+    local provider="$3"
+    
+    local use_cases=""
+    
+    if [ "$expected_speed_int" -ge 30 ]; then
+        use_cases="✅ エンタープライズWebアプリ
+✅ 高トラフィックAPIサーバー
+✅ データベースサーバー（大規模）
+✅ リアルタイム処理
+✅ AI/ML推論サーバー
+
+【推奨プロバイダー】
+このクラスの性能は、以下のような用途に最適です:
+• 金融・医療系システム（コンプライアンス対応）
+• SaaS製品の本番環境
+• データ分析基盤"
+    elif [ "$expected_speed_int" -ge 15 ]; then
+        use_cases="✅ Webアプリケーション
+✅ APIサーバー
+✅ データベースサーバー（中規模）
+✅ ファイルサーバー
+
+【推奨プロバイダー】
+このクラスの性能は、以下のような用途に最適です:
+• 中小企業の業務システム
+• スタートアップのMVP環境
+• 中規模ECサイト"
+    elif [ "$expected_speed_int" -ge 8 ]; then
+        use_cases="✅ 静的サイト・ブログ
+✅ ファイルサーバー
+✅ 開発・テスト環境
+✅ バックアップサーバー
+⚠️  軽量Webアプリ（トライアル推奨）
+
+【推奨プロバイダー】
+このクラスの性能は、以下のような用途に最適です:
+• 個人プロジェクト
+• 社内ツール・イントラネット
+• CI/CD環境"
+    elif [ "$expected_speed_int" -ge 4 ]; then
+        use_cases="✅ 静的コンテンツ配信
+✅ 個人用途
+⚠️  開発・検証環境（負荷制限あり）
+❌ 本番Webアプリ
+
+【推奨プロバイダー】
+このクラスの性能は、以下のような用途に限定されます:
+• 個人ブログ
+• 学習用環境
+• デモ・プロトタイプ"
+    else
+        use_cases="⚠️  検証・学習用途のみ
+❌ 本番環境
+❌ 高負荷システム
+
+【推奨プロバイダー】
+⚠️  より高スペックなプランへのアップグレードを推奨します"
+    fi
+    
+    echo "$use_cases"
+}
 
 # =================================================================
 # 1. 基本システム情報
@@ -146,19 +359,61 @@ fi
 echo "CPU周波数: $CPU_FREQ"
 echo ""
 
-# CPUコア数スコアリング
+# CPUコア数スコアリング（調整: 重みを軽減）
 if [ "$CPU_CORES" -ge 8 ]; then
     echo -e "${GREEN}✅ CPUコア数: $CPU_CORES (十分)${NC}"
-    CPU_SCORE=15
+    CPU_SCORE=8
 elif [ "$CPU_CORES" -ge 4 ]; then
     echo -e "${GREEN}✅ CPUコア数: $CPU_CORES (良好)${NC}"
-    CPU_SCORE=10
+    CPU_SCORE=6
 elif [ "$CPU_CORES" -ge 2 ]; then
     echo -e "${YELLOW}⚠️  CPUコア数: $CPU_CORES (最低限)${NC}"
-    CPU_SCORE=5
+    CPU_SCORE=4
 else
     echo -e "${RED}❌ CPUコア数: $CPU_CORES (不足)${NC}"
     CPU_SCORE=0
+fi
+echo ""
+
+# =================================================================
+# 2.5 CPU世代判定（新機能）
+# =================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}  2.5 CPU世代分析（新機能）${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+# CPU世代判定
+IFS='|' read -r CPU_GENERATION CPU_YEAR CPU_ARCH CPU_GEN_SCORE <<< "$(detect_cpu_generation "$CPU_MODEL")"
+
+echo "【世代判定】"
+echo "  世代名: $CPU_GENERATION"
+echo "  リリース年: $CPU_YEAR"
+echo "  アーキテクチャ: $CPU_ARCH"
+echo ""
+
+if [ "$CPU_GENERATION" != "Unknown" ]; then
+    # 世代評価の表示
+    local year_num=$(echo "$CPU_YEAR" | grep -oE "[0-9]{4}" | head -1)
+    if [ -n "$year_num" ] && [ "$year_num" -ge 2021 ]; then
+        echo -e "  世代評価: ${GREEN}🟢 最新世代${NC}"
+        echo "  MukenVault適合度: ★★★★★ (最高)"
+    elif [ -n "$year_num" ] && [ "$year_num" -ge 2019 ]; then
+        echo -e "  世代評価: ${GREEN}🟡 現行世代${NC}"
+        echo "  MukenVault適合度: ★★★★☆ (優秀)"
+    elif [ -n "$year_num" ] && [ "$year_num" -ge 2017 ]; then
+        echo -e "  世代評価: ${YELLOW}🟠 準現行世代${NC}"
+        echo "  MukenVault適合度: ★★★☆☆ (標準)"
+    elif [ -n "$year_num" ] && [ "$year_num" -ge 2015 ]; then
+        echo -e "  世代評価: ${YELLOW}🔴 旧世代${NC}"
+        echo "  MukenVault適合度: ★★☆☆☆ (制限あり)"
+    else
+        echo -e "  世代評価: ${RED}⚪ 古い世代${NC}"
+        echo "  MukenVault適合度: ★☆☆☆☆ (非推奨)"
+    fi
+else
+    echo "  世代評価: 判定できませんでした"
+    CPU_GEN_SCORE=0
 fi
 echo ""
 
@@ -174,7 +429,7 @@ echo ""
 HAS_AES_NI=$(grep -o 'aes' /proc/cpuinfo | head -1)
 if [ -n "$HAS_AES_NI" ]; then
     echo -e "${GREEN}✅ AES-NI: サポート ✅ 必須機能${NC}"
-    AES_NI_SCORE=20
+    AES_NI_SCORE=15
 else
     echo -e "${RED}❌ AES-NI: 非サポート${NC}"
     echo -e "${RED}MukenVaultはAES-NIが必須です${NC}"
@@ -191,16 +446,18 @@ else
     AVX2_SCORE=0
 fi
 
-# VAESチェック（検出だけでは5点のみ）
+# VAESチェック
 HAS_VAES=$(grep -o 'vaes' /proc/cpuinfo | head -1)
 if [ -n "$HAS_VAES" ]; then
     echo -e "${GREEN}✅ VAES: サポート ✅ 最高性能を実現${NC}"
-    VAES_DETECT_SCORE=5
+    VAES_DETECT_SCORE=10
     VAES_AVAILABLE=1
+    VAES_SUPPORT_STR="yes"
 else
     echo -e "${YELLOW}ℹ️  VAES: 非サポート${NC}"
     VAES_DETECT_SCORE=0
     VAES_AVAILABLE=0
+    VAES_SUPPORT_STR="no"
 fi
 
 # AVX-512チェック
@@ -215,7 +472,7 @@ else
     HAS_AVX512_FLAG=0
 fi
 
-INSTRUCTION_SCORE=$((AES_NI_SCORE + AVX2_SCORE + VAES_DETECT_SCORE + AVX512_SCORE))
+INSTRUCTION_SCORE=$((AES_NI_SCORE + AVX2_SCORE + VAES_DETECT_SCORE + AVX512_SCORE + CPU_GEN_SCORE))
 
 echo ""
 echo "【命令セット評価】"
@@ -243,18 +500,18 @@ MEM_TOTAL_GB=$(awk "BEGIN {printf \"%.2f\", $MEM_TOTAL_KB / 1048576}")
 echo "総メモリ: $MEM_TOTAL_GB GB"
 echo ""
 
-# メモリ容量スコアリング
+# メモリ容量スコアリング（調整: VPS規模判定に使用、性能影響は小）
 MEM_TOTAL_INT=$(awk "BEGIN {print int($MEM_TOTAL_GB)}")
 if [ "$MEM_TOTAL_INT" -ge 16 ]; then
     echo -e "${GREEN}✅ メモリ容量: $MEM_TOTAL_GB GB (十分)${NC}"
-    MEM_CAPACITY_SCORE=10
+    MEM_CAPACITY_SCORE=5
 elif [ "$MEM_TOTAL_INT" -ge 8 ]; then
     echo -e "${GREEN}✅ メモリ容量: $MEM_TOTAL_GB GB (良好)${NC}"
-    MEM_CAPACITY_SCORE=7
+    MEM_CAPACITY_SCORE=4
 elif [ "$MEM_TOTAL_INT" -ge 4 ]; then
     echo -e "${YELLOW}ℹ️  メモリ容量: $MEM_TOTAL_GB GB (標準)${NC}"
     echo "   ※ VPS料金プランの選定基準です。MukenVault性能には影響しません"
-    MEM_CAPACITY_SCORE=5
+    MEM_CAPACITY_SCORE=3
 else
     echo -e "${YELLOW}ℹ️  メモリ容量: $MEM_TOTAL_GB GB (小規模VPS)${NC}"
     echo "   ※ VPS料金プランの選定基準です。MukenVault性能には影響しません"
@@ -306,20 +563,20 @@ MEM_BANDWIDTH=$("$TEMP_DIR/mem_bandwidth")
 echo "メモリ帯域: $MEM_BANDWIDTH GB/s"
 echo ""
 
-# メモリ帯域スコアリング
+# メモリ帯域スコアリング（調整: 重要度を上げる）
 MEM_BW_INT=$(awk "BEGIN {print int($MEM_BANDWIDTH)}")
 if [ "$MEM_BW_INT" -ge 30 ]; then
     echo -e "${GREEN}✅ メモリ帯域: $MEM_BANDWIDTH GB/s (優秀)${NC}"
-    MEM_BANDWIDTH_SCORE=10
+    MEM_BANDWIDTH_SCORE=12
 elif [ "$MEM_BW_INT" -ge 15 ]; then
     echo -e "${GREEN}✅ メモリ帯域: $MEM_BANDWIDTH GB/s (良好)${NC}"
-    MEM_BANDWIDTH_SCORE=7
+    MEM_BANDWIDTH_SCORE=10
 elif [ "$MEM_BW_INT" -ge 8 ]; then
     echo -e "${YELLOW}⚠️  メモリ帯域: $MEM_BANDWIDTH GB/s (制限あり)${NC}"
-    MEM_BANDWIDTH_SCORE=5
+    MEM_BANDWIDTH_SCORE=7
 else
     echo -e "${RED}⚠️  メモリ帯域: $MEM_BANDWIDTH GB/s (低速)${NC}"
-    MEM_BANDWIDTH_SCORE=2
+    MEM_BANDWIDTH_SCORE=4
 fi
 
 MEM_SCORE=$((MEM_CAPACITY_SCORE + MEM_BANDWIDTH_SCORE))
@@ -549,11 +806,11 @@ AES_SPEED=$("$TEMP_DIR/aes_benchmark")
 echo "AES-NI暗号化速度: $AES_SPEED GB/s"
 echo ""
 
-# AES性能スコアリング
+# AES性能スコアリング（調整: 実測性能を重視）
 AES_SPEED_INT=$(awk "BEGIN {print int($AES_SPEED)}")
 if [ "$AES_SPEED_INT" -ge 20 ]; then
     echo -e "${GREEN}✅ AES-NI性能: $AES_SPEED GB/s (優秀)${NC}"
-    AES_PERF_SCORE=15
+    AES_PERF_SCORE=12
 elif [ "$AES_SPEED_INT" -ge 10 ]; then
     echo -e "${YELLOW}⚠️  AES-NI性能: $AES_SPEED GB/s (標準)${NC}"
     AES_PERF_SCORE=10
@@ -774,7 +1031,7 @@ EOFCODE
         fi
     fi
     
-    # 結果表示とスコア計算
+    # 結果表示とスコア計算（調整: VAES性能ボーナス大幅増）
     if [ "$VAES_SPEED" != "0" ] && [ -n "$VAES_SPEED" ]; then
         echo "VAES暗号化速度: $VAES_SPEED GB/s"
         echo ""
@@ -785,30 +1042,30 @@ EOFCODE
         echo "  → VAESは通常のAES-NIより大幅に高速です"
         echo ""
         
-        # VAES性能ボーナス（測定成功時のみ）
+        # VAES性能ボーナス（調整: 最大25点に増）
         VAES_SPEED_INT=$(awk "BEGIN {print int($VAES_SPEED)}")
         if [ "$VAES_SPEED_INT" -ge 60 ]; then
-            VAES_PERF_BONUS=15
+            VAES_PERF_BONUS=25
             echo -e "${GREEN}✅ VAES性能: $VAES_SPEED GB/s (驚異的！)${NC}"
         elif [ "$VAES_SPEED_INT" -ge 40 ]; then
-            VAES_PERF_BONUS=12
+            VAES_PERF_BONUS=20
             echo -e "${GREEN}✅ VAES性能: $VAES_SPEED GB/s (優秀)${NC}"
         elif [ "$VAES_SPEED_INT" -ge 30 ]; then
-            VAES_PERF_BONUS=10
+            VAES_PERF_BONUS=18
             echo -e "${GREEN}✅ VAES性能: $VAES_SPEED GB/s (良好)${NC}"
         elif [ "$VAES_SPEED_INT" -ge 20 ]; then
-            VAES_PERF_BONUS=8
+            VAES_PERF_BONUS=15
             echo -e "${GREEN}✅ VAES性能: $VAES_SPEED GB/s (標準)${NC}"
         elif [ "$VAES_SPEED_INT" -ge 10 ]; then
-            VAES_PERF_BONUS=5
+            VAES_PERF_BONUS=10
             echo -e "${YELLOW}ℹ️  VAES性能: $VAES_SPEED GB/s${NC}"
         else
-            VAES_PERF_BONUS=2
+            VAES_PERF_BONUS=5
             echo -e "${YELLOW}ℹ️  VAES性能: $VAES_SPEED GB/s${NC}"
         fi
     else
         echo -e "${YELLOW}⚠️  VAES測定失敗${NC}"
-        echo "（VAES命令セット検出: +5点、測定失敗: +0点）"
+        echo "（VAES命令セット検出: +10点、測定失敗: +0点）"
     fi
 else
     echo -e "${YELLOW}ℹ️  VAES非対応CPUのため、この測定はスキップされます${NC}"
@@ -920,6 +1177,67 @@ fi
 echo ""
 
 # =================================================================
+# 8.5 プロバイダー戦略分析（新機能）
+# =================================================================
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}  8.5 プロバイダー戦略分析（新機能）${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+IFS='|' read -r STRATEGY TARGET STARS <<< "$(analyze_provider_strategy "$CPU_GENERATION" "$CPU_YEAR" "$VAES_SUPPORT_STR" "$EXPECTED_SPEED")"
+
+echo "【このプロバイダーの特性】"
+if [ "$PROVIDER" != "不明" ]; then
+    echo "  プロバイダー名: $PROVIDER"
+else
+    echo "  プロバイダー名: （自動検出できませんでした）"
+fi
+echo ""
+echo "  ハードウェア戦略: $STRATEGY"
+echo "  └─ CPU世代: $CPU_GENERATION ($CPU_YEAR)"
+if [ "$VAES_AVAILABLE" -eq 1 ] && [ "$VAES_SPEED" != "0" ]; then
+    echo "     → 最新世代CPUへの投資が確認できます"
+elif [ "$VAES_AVAILABLE" -eq 1 ]; then
+    echo "     → VAES対応CPUですが、性能は控えめです"
+else
+    echo "     → コスト重視の構成です"
+fi
+echo ""
+echo "  想定ターゲット: $TARGET"
+echo "  └─ このクラスのVPSが想定する用途"
+echo ""
+echo "  MukenVault適合度: $(printf '★%.0s' $(seq 1 $STARS))$(printf '☆%.0s' $(seq $(($STARS + 1)) 5))"
+echo ""
+
+# プロバイダー別の推奨事項
+echo "【MukenVault導入における位置づけ】"
+if [ "$STARS" -ge 5 ]; then
+    echo -e "${GREEN}✅ 最高クラス: エンタープライズ本番環境に推奨${NC}"
+    echo "   • 金融・医療系システム"
+    echo "   • コンプライアンス要求の厳しい環境"
+    echo "   • 24/365稼働の重要システム"
+elif [ "$STARS" -ge 4 ]; then
+    echo -e "${GREEN}✅ 優良クラス: 本番環境に十分対応${NC}"
+    echo "   • 中小企業の業務システム"
+    echo "   • スタートアップのプロダクション環境"
+    echo "   • 中規模Webサービス"
+elif [ "$STARS" -ge 3 ]; then
+    echo -e "${YELLOW}🟡 標準クラス: 開発・ステージング向き${NC}"
+    echo "   • 開発環境・テスト環境"
+    echo "   • 社内ツール・イントラネット"
+    echo "   • 軽量本番環境（要検証）"
+elif [ "$STARS" -ge 2 ]; then
+    echo -e "${RED}🔴 低コストクラス: 限定用途のみ${NC}"
+    echo "   • バックアップサーバー"
+    echo "   • 静的コンテンツ配信"
+    echo "   • 学習・検証環境"
+else
+    echo -e "${RED}⚠️  要検討: より高スペックな環境を推奨${NC}"
+fi
+echo ""
+echo ""
+
+# =================================================================
 # 9. 体験品質の判定
 # =================================================================
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -979,7 +1297,7 @@ echo -e "${CYAN}  10. 総合診断結果${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-# 総合スコア計算
+# 総合スコア計算（調整版）
 TOTAL_SCORE=$((ARCH_SCORE + CPU_SCORE + INSTRUCTION_SCORE + MEM_SCORE + AES_PERF_SCORE + QUALITY_SCORE + VAES_PERF_BONUS))
 
 # スコア上限を100に制限
@@ -990,7 +1308,7 @@ fi
 echo "総合スコア: $TOTAL_SCORE/$MAX_SCORE点 ($((TOTAL_SCORE * 100 / MAX_SCORE))%)"
 echo ""
 
-# 総合評価（期待性能ベースで判定）
+# 総合評価（期待性能ベースで判定、スコアとの整合性を確保）
 echo "【総合評価】"
 
 if [ "$EXPECTED_SPEED_INT" -ge 30 ]; then
@@ -1013,7 +1331,7 @@ echo ""
 echo ""
 
 # =================================================================
-# 11. 適合用途の判定
+# 11. 適合用途の判定（プロバイダー特性反映版）
 # =================================================================
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${CYAN}  11. 適合用途の判定${NC}"
@@ -1023,33 +1341,8 @@ echo ""
 echo "この環境で快適に使える用途:"
 echo ""
 
-if [ "$EXPECTED_SPEED_INT" -ge 30 ]; then
-    echo -e "${GREEN}✅ エンタープライズWebアプリ${NC}"
-    echo -e "${GREEN}✅ 高トラフィックAPIサーバー${NC}"
-    echo -e "${GREEN}✅ データベースサーバー（大規模）${NC}"
-    echo -e "${GREEN}✅ リアルタイム処理${NC}"
-    echo -e "${GREEN}✅ AI/ML推論サーバー${NC}"
-elif [ "$EXPECTED_SPEED_INT" -ge 15 ]; then
-    echo -e "${GREEN}✅ Webアプリケーション${NC}"
-    echo -e "${GREEN}✅ APIサーバー${NC}"
-    echo -e "${GREEN}✅ データベースサーバー（中規模）${NC}"
-    echo -e "${GREEN}✅ ファイルサーバー${NC}"
-elif [ "$EXPECTED_SPEED_INT" -ge 8 ]; then
-    echo -e "${GREEN}✅ 静的サイト・ブログ${NC}"
-    echo -e "${GREEN}✅ ファイルサーバー${NC}"
-    echo -e "${GREEN}✅ 開発・テスト環境${NC}"
-    echo -e "${GREEN}✅ バックアップサーバー${NC}"
-    echo -e "${YELLOW}⚠️  軽量Webアプリ（トライアル推奨）${NC}"
-elif [ "$EXPECTED_SPEED_INT" -ge 4 ]; then
-    echo -e "${GREEN}✅ 静的コンテンツ配信${NC}"
-    echo -e "${GREEN}✅ 個人用途${NC}"
-    echo -e "${YELLOW}⚠️  開発・検証環境（負荷制限あり）${NC}"
-    echo -e "${RED}❌ 本番Webアプリ${NC}"
-else
-    echo -e "${YELLOW}⚠️  検証・学習用途のみ${NC}"
-    echo -e "${RED}❌ 本番環境${NC}"
-    echo -e "${RED}❌ 高負荷システム${NC}"
-fi
+USE_CASES=$(get_recommended_use_cases "$EXPECTED_SPEED_INT" "$CPU_GENERATION" "$PROVIDER")
+echo "$USE_CASES"
 echo ""
 
 # =================================================================
@@ -1066,6 +1359,8 @@ echo ""
     echo "  Kernel: $KERNEL"
     echo "  Architecture: $ARCH"
     echo "  CPU: $CPU_MODEL"
+    echo "  CPU Generation: $CPU_GENERATION ($CPU_YEAR)"
+    echo "  CPU Architecture: $CPU_ARCH"
     echo "  CPU Cores: $CPU_CORES"
     echo "  Memory: $MEM_TOTAL_GB GB"
     echo "  Memory Bandwidth: $MEM_BANDWIDTH GB/s"
@@ -1089,6 +1384,9 @@ echo ""
     echo "Environment:"
     echo "  Virtual: $([ "$IS_VIRTUAL" -eq 1 ] && echo "Yes" || echo "No")"
     echo "  Provider: $PROVIDER"
+    echo "  Provider Strategy: $STRATEGY"
+    echo "  Target Market: $TARGET"
+    echo "  MukenVault Stars: $STARS/5"
     echo ""
     echo "Expected Performance:"
     echo "  Speed: $EXPECTED_SPEED GB/s"
@@ -1149,6 +1447,11 @@ echo -e "${GREEN}"
 cat << "EOF"
 ╔══════════════════════════════════════════════════════════════╗
 ║  MukenVault Pre-Check completed successfully!               ║
+║                                                              ║
+║  🆕 v1.4.0 新機能:                                          ║
+║     • CPU世代自動判定                                       ║
+║     • プロバイダー戦略分析                                  ║
+║     • より精密なスコアリング                                ║
 ╚══════════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}"
