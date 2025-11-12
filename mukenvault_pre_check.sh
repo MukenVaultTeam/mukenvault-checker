@@ -227,7 +227,7 @@ analyze_provider_strategy() {
 }
 
 #================================================================
-# 推奨用途判定関数（改良版: スペック総合評価）
+# 推奨用途判定関数（改良版: 多次元スコアリング方式）
 #================================================================
 get_recommended_use_cases() {
     local expected_speed_int="$1"
@@ -236,17 +236,189 @@ get_recommended_use_cases() {
     
     local use_cases=""
     
-    # スペック総合評価
+    # 用途判定スコア計算 (100点満点)
+    local use_case_score=0
+    
+    # 1. CPU世代評価 (0-20点)
+    local cpu_year_num=$(echo "$CPU_YEAR" | grep -oE "[0-9]{4}" | head -1)
+    if [ -n "$cpu_year_num" ]; then
+        if [ "$cpu_year_num" -ge 2021 ]; then
+            use_case_score=$((use_case_score + 20))
+        elif [ "$cpu_year_num" -ge 2019 ]; then
+            use_case_score=$((use_case_score + 15))
+        elif [ "$cpu_year_num" -ge 2017 ]; then
+            use_case_score=$((use_case_score + 10))
+        elif [ "$cpu_year_num" -ge 2015 ]; then
+            use_case_score=$((use_case_score + 5))
+        fi
+    fi
+    
+    # 2. VAES性能評価 (0-30点)
+    local vaes_speed_int=0
+    if [ "$VAES_AVAILABLE" -eq 1 ] && [ -n "$VAES_SPEED" ] && [ "$VAES_SPEED" != "0" ]; then
+        vaes_speed_int=$(awk "BEGIN {print int($VAES_SPEED)}")
+        if [ "$vaes_speed_int" -ge 50 ]; then
+            use_case_score=$((use_case_score + 30))
+        elif [ "$vaes_speed_int" -ge 35 ]; then
+            use_case_score=$((use_case_score + 25))
+        elif [ "$vaes_speed_int" -ge 20 ]; then
+            use_case_score=$((use_case_score + 20))
+        elif [ "$vaes_speed_int" -ge 10 ]; then
+            use_case_score=$((use_case_score + 15))
+        fi
+    fi
+    
+    # 3. 期待性能評価 (0-30点)
+    if [ "$expected_speed_int" -ge 20 ]; then
+        use_case_score=$((use_case_score + 30))
+    elif [ "$expected_speed_int" -ge 15 ]; then
+        use_case_score=$((use_case_score + 25))
+    elif [ "$expected_speed_int" -ge 10 ]; then
+        use_case_score=$((use_case_score + 20))
+    elif [ "$expected_speed_int" -ge 6 ]; then
+        use_case_score=$((use_case_score + 15))
+    elif [ "$expected_speed_int" -ge 4 ]; then
+        use_case_score=$((use_case_score + 10))
+    fi
+    
+    # 4. スペックボーナス (0-20点)
+    if [ "$CPU_CORES" -ge 8 ] && [ "$MEM_TOTAL_INT" -ge 16 ]; then
+        use_case_score=$((use_case_score + 20))
+    elif [ "$CPU_CORES" -ge 6 ] && [ "$MEM_TOTAL_INT" -ge 12 ]; then
+        use_case_score=$((use_case_score + 15))
+    elif [ "$CPU_CORES" -ge 4 ] && [ "$MEM_TOTAL_INT" -ge 8 ]; then
+        use_case_score=$((use_case_score + 12))
+    elif [ "$CPU_CORES" -ge 2 ] && [ "$MEM_TOTAL_INT" -ge 4 ]; then
+        use_case_score=$((use_case_score + 8))
+    elif [ "$CPU_CORES" -ge 1 ]; then
+        use_case_score=$((use_case_score + 5))
+    fi
+    
+    # 用途判定 (スコアベース)
     local spec_tier="basic"
-    if [ "$CPU_CORES" -ge 8 ] && [ "$MEM_TOTAL_INT" -ge 16 ] && [ "$VAES_AVAILABLE" -eq 1 ]; then
+    if [ "$use_case_score" -ge 75 ]; then
         spec_tier="enterprise"
-    elif [ "$CPU_CORES" -ge 4 ] && [ "$MEM_TOTAL_INT" -ge 8 ] && [ "$VAES_AVAILABLE" -eq 1 ]; then
+    elif [ "$use_case_score" -ge 55 ]; then
         spec_tier="business"
-    elif [ "$CPU_CORES" -ge 4 ] && [ "$MEM_TOTAL_INT" -ge 4 ]; then
+    elif [ "$use_case_score" -ge 35 ]; then
+        spec_tier="standard"
+    fi
+    # 用途判定 (スコアベース)
+    local spec_tier="basic"
+    if [ "$use_case_score" -ge 75 ]; then
+        spec_tier="enterprise"
+    elif [ "$use_case_score" -ge 55 ]; then
+        spec_tier="business"
+    elif [ "$use_case_score" -ge 35 ]; then
         spec_tier="standard"
     fi
     
-    # Enterprise tier (8コア以上 + 16GB以上 + VAES)
+    # Enterprise tier (スコア75点以上)
+    if [ "$spec_tier" = "enterprise" ]; then
+        if [ "$expected_speed_int" -ge 20 ]; then
+            use_cases="✅ エンタープライズWebアプリケーション
+✅ 高トラフィックAPIサーバー
+✅ データベースサーバー（大規模）
+✅ コンテナオーケストレーション（Kubernetes）
+✅ リアルタイム処理・ストリーミング
+
+【エンタープライズクラス - 用途判定スコア: ${use_case_score}/100】
+このスペックは、以下のような本番環境に最適です:
+• 中堅〜大企業の基幹システム
+• SaaS製品の本番環境
+• 24/365稼働の重要システム
+• 月間100万PV超のWebサービス"
+        elif [ "$expected_speed_int" -ge 12 ]; then
+            use_cases="✅ ビジネスWebアプリケーション
+✅ APIサーバー（中〜高トラフィック）
+✅ データベースサーバー（中〜大規模）
+✅ コンテナ環境（Docker Compose/小規模K8s）
+✅ CI/CDパイプライン
+
+【準エンタープライズクラス - 用途判定スコア: ${use_case_score}/100】
+このスペックは、以下のような用途に最適です:
+• 中小企業の本番システム
+• スタートアップのプロダクション環境
+• 月間10万〜100万PVのWebサービス
+• 部門サーバー・グループウェア"
+        else
+            use_cases="✅ 中規模Webアプリケーション
+✅ APIサーバー（中トラフィック）
+✅ データベースサーバー（小〜中規模）
+✅ コンテナ環境（Docker Compose）
+✅ 開発・ステージング環境
+
+【ビジネスクラス - 用途判定スコア: ${use_case_score}/100】
+このスペックは、以下のような用途に適しています:
+• 中小規模の本番システム
+• 開発・ステージング環境（本番同等）
+• 社内向けWebアプリケーション
+
+⚠️  注意: 並列処理が必要な大規模システムはコア数不足の可能性"
+        fi
+    
+    # Business tier (スコア55-74点)
+    elif [ "$spec_tier" = "business" ]; then
+        if [ "$expected_speed_int" -ge 15 ]; then
+            use_cases="✅ Webアプリケーション
+✅ APIサーバー
+✅ データベースサーバー（中規模）
+✅ ファイルサーバー
+✅ コンテナ環境（Docker Compose）
+
+【ビジネス向け - 用途判定スコア: ${use_case_score}/100】
+このクラスの性能は、以下のような用途に最適です:
+• 中小企業の業務システム
+• スタートアップのMVP環境
+• 中規模ECサイト
+• 月間1万〜10万PVのWebサービス"
+        else
+            use_cases="✅ 軽量Webアプリケーション
+✅ 開発・テスト環境
+✅ ファイルサーバー
+✅ CI/CD環境
+✅ 社内ツール
+
+【開発・テスト向け - 用途判定スコア: ${use_case_score}/100】
+このクラスの性能は、以下のような用途に適しています:
+• 開発・検証環境
+• 社内ツール
+• プロトタイプ
+• 軽量な本番環境（要ベンチマーク）"
+        fi
+    
+    # Standard tier (スコア35-54点)
+    elif [ "$spec_tier" = "standard" ]; then
+        use_cases="✅ 静的サイト・ブログ
+✅ ファイルサーバー
+✅ 開発・テスト環境
+✅ バックアップサーバー
+⚠️  軽量Webアプリ（トライアル推奨）
+
+【標準向け - 用途判定スコア: ${use_case_score}/100】
+このクラスの性能は、以下のような用途に最適です:
+• 個人プロジェクト
+• 社内ツール・イントラネット
+• CI/CD環境
+• 学習・検証用途"
+    
+    # Basic tier (スコア34点以下)
+    else
+        use_cases="✅ 静的コンテンツ配信
+✅ 個人用途
+⚠️  開発・検証環境（負荷制限あり）
+❌ 本番Webアプリ
+
+【エントリー向け - 用途判定スコア: ${use_case_score}/100】
+このクラスの性能は、以下のような用途に限定されます:
+• 個人ブログ
+• 学習用環境
+• デモ・プロトタイプ
+• 静的ファイル配信"
+    fi
+    
+    echo "$use_cases"
+}
     if [ "$spec_tier" = "enterprise" ]; then
         if [ "$expected_speed_int" -ge 20 ]; then
             use_cases="✅ エンタープライズWebアプリケーション
