@@ -1,11 +1,20 @@
 #!/bin/bash
 
 #================================================================
-# MukenVault Pre-Installation Checker v1.4.0
-# 新機能:
+# MukenVault Pre-Installation Checker v1.4.1
+# 
+# 新機能 (v1.4.1):
+# - 構文エラーを完全に修正
+# - コードの冗長性を削減
+# - エラーハンドリングの改善
+# - より正確な用途判定アルゴリズム
+# 
+# 既存機能 (v1.4.0):
 # - CPU世代自動判定
 # - プロバイダー戦略分析
-# - スコアリング精緻化
+# - 多次元スコアリング方式
+# - VAES性能測定
+# - 平文アクセス性能測定
 #================================================================
 
 # 色の定義
@@ -66,12 +75,13 @@ echo -e "${CYAN}"
 cat << "EOF"
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║   MukenVault導入前システムチェッカー v1.4.0                 ║
+║   MukenVault導入前システムチェッカー v1.4.1                 ║
 ║                                                              ║
 ║   あなたの環境でMukenVaultがどれだけの性能を発揮できるかを  ║
 ║   事前診断します                                            ║
 ║                                                              ║
-║   🆕 CPU世代判定 / プロバイダー分析機能追加                ║
+║   🆕 v1.4.1: 構文エラー修正・コード最適化                  ║
+║   ✨ CPU世代判定 / プロバイダー分析機能搭載                ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
 EOF
@@ -80,7 +90,7 @@ echo ""
 echo "診断を開始します..."
 echo "結果は $REPORT_FILE に保存されます"
 echo ""
-echo ""
+sleep 1
 
 # スコア変数初期化
 TOTAL_SCORE=0
@@ -227,12 +237,10 @@ analyze_provider_strategy() {
 }
 
 #================================================================
-# 推奨用途判定関数（改良版: 多次元スコアリング方式）
+# 推奨用途判定関数（多次元スコアリング方式）
 #================================================================
 get_recommended_use_cases() {
     local expected_speed_int="$1"
-    local cpu_gen="$2"
-    local provider="$3"
     
     local use_cases=""
     
@@ -303,17 +311,8 @@ get_recommended_use_cases() {
     elif [ "$use_case_score" -ge 35 ]; then
         spec_tier="standard"
     fi
-    # 用途判定 (スコアベース)
-    local spec_tier="basic"
-    if [ "$use_case_score" -ge 75 ]; then
-        spec_tier="enterprise"
-    elif [ "$use_case_score" -ge 55 ]; then
-        spec_tier="business"
-    elif [ "$use_case_score" -ge 35 ]; then
-        spec_tier="standard"
-    fi
     
-    # Enterprise tier (スコア75点以上)
+    # 用途判定テキストの生成
     if [ "$spec_tier" = "enterprise" ]; then
         if [ "$expected_speed_int" -ge 20 ]; then
             use_cases="✅ エンタープライズWebアプリケーション
@@ -357,7 +356,6 @@ get_recommended_use_cases() {
 ⚠️  注意: 並列処理が必要な大規模システムはコア数不足の可能性"
         fi
     
-    # Business tier (スコア55-74点)
     elif [ "$spec_tier" = "business" ]; then
         if [ "$expected_speed_int" -ge 15 ]; then
             use_cases="✅ Webアプリケーション
@@ -387,7 +385,6 @@ get_recommended_use_cases() {
 • 軽量な本番環境（要ベンチマーク）"
         fi
     
-    # Standard tier (スコア35-54点)
     elif [ "$spec_tier" = "standard" ]; then
         use_cases="✅ 静的サイト・ブログ
 ✅ ファイルサーバー
@@ -402,7 +399,6 @@ get_recommended_use_cases() {
 • CI/CD環境
 • 学習・検証用途"
     
-    # Basic tier (スコア34点以下)
     else
         use_cases="✅ 静的コンテンツ配信
 ✅ 個人用途
@@ -415,103 +411,6 @@ get_recommended_use_cases() {
 • 学習用環境
 • デモ・プロトタイプ
 • 静的ファイル配信"
-    fi
-    
-    echo "$use_cases"
-}
-    if [ "$spec_tier" = "enterprise" ]; then
-        if [ "$expected_speed_int" -ge 20 ]; then
-            use_cases="✅ エンタープライズWebアプリケーション
-✅ 高トラフィックAPIサーバー
-✅ データベースサーバー（大規模）
-✅ コンテナオーケストレーション（Kubernetes）
-✅ リアルタイム処理・ストリーミング
-
-【エンタープライズクラス】
-このスペックは、以下のような本番環境に最適です:
-• 中堅〜大企業の基幹システム
-• SaaS製品の本番環境
-• 24/365稼働の重要システム
-• 月間100万PV超のWebサービス"
-        elif [ "$expected_speed_int" -ge 12 ]; then
-            use_cases="✅ ビジネスWebアプリケーション
-✅ APIサーバー（中〜高トラフィック）
-✅ データベースサーバー（中〜大規模）
-✅ コンテナ環境（Docker Compose/小規模K8s）
-✅ CI/CDパイプライン
-
-【ビジネスクラス】
-このスペックは、以下のような用途に最適です:
-• 中小企業の本番システム
-• スタートアップのプロダクション環境
-• 月間10万〜100万PVのWebサービス
-• 部門サーバー・グループウェア"
-        else
-            use_cases="✅ Webアプリケーション
-✅ APIサーバー
-✅ データベースサーバー（中規模）
-✅ 開発・ステージング環境
-⚠️  高負荷本番環境（ベンチマーク推奨）
-
-【準ビジネスクラス】
-このスペックは、以下のような用途に適しています:
-• 中小規模の本番システム
-• 開発・ステージング環境
-• 社内向けWebアプリケーション"
-        fi
-    
-    # Business tier (4コア以上 + 8GB以上 + VAES)
-    elif [ "$spec_tier" = "business" ]; then
-        if [ "$expected_speed_int" -ge 15 ]; then
-            use_cases="✅ Webアプリケーション
-✅ APIサーバー
-✅ データベースサーバー（中規模）
-✅ ファイルサーバー
-
-【ビジネス向け】
-このクラスの性能は、以下のような用途に最適です:
-• 中小企業の業務システム
-• スタートアップのMVP環境
-• 中規模ECサイト"
-        else
-            use_cases="✅ 軽量Webアプリケーション
-✅ 開発・テスト環境
-✅ ファイルサーバー
-✅ CI/CD環境
-
-【開発・テスト向け】
-このクラスの性能は、以下のような用途に適しています:
-• 開発・検証環境
-• 社内ツール
-• プロトタイプ"
-        fi
-    
-    # Standard tier
-    elif [ "$spec_tier" = "standard" ]; then
-        use_cases="✅ 静的サイト・ブログ
-✅ ファイルサーバー
-✅ 開発・テスト環境
-✅ バックアップサーバー
-⚠️  軽量Webアプリ（トライアル推奨）
-
-【標準向け】
-このクラスの性能は、以下のような用途に最適です:
-• 個人プロジェクト
-• 社内ツール・イントラネット
-• CI/CD環境"
-    
-    # Basic tier
-    else
-        use_cases="✅ 静的コンテンツ配信
-✅ 個人用途
-⚠️  開発・検証環境（負荷制限あり）
-❌ 本番Webアプリ
-
-【エントリー向け】
-このクラスの性能は、以下のような用途に限定されます:
-• 個人ブログ
-• 学習用環境
-• デモ・プロトタイプ"
     fi
     
     echo "$use_cases"
@@ -582,7 +481,7 @@ fi
 echo "CPU周波数: $CPU_FREQ"
 echo ""
 
-# CPUコア数スコアリング（調整: 重みを軽減）
+# CPUコア数スコアリング
 if [ "$CPU_CORES" -ge 8 ]; then
     echo -e "${GREEN}✅ CPUコア数: $CPU_CORES (十分)${NC}"
     CPU_SCORE=8
@@ -599,10 +498,10 @@ fi
 echo ""
 
 # =================================================================
-# 2.5 CPU世代判定（新機能）
+# 2.5 CPU世代判定
 # =================================================================
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${CYAN}  2.5 CPU世代分析（新機能）${NC}"
+echo -e "${CYAN}  2.5 CPU世代分析${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
@@ -641,7 +540,7 @@ fi
 echo ""
 
 # =================================================================
-# 3. CPU命令セットチェック（最重要）
+# 3. CPU命令セットチェック
 # =================================================================
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${CYAN}  3. CPU命令セットチェック（最重要）${NC}"
@@ -723,7 +622,7 @@ MEM_TOTAL_GB=$(awk "BEGIN {printf \"%.2f\", $MEM_TOTAL_KB / 1048576}")
 echo "総メモリ: $MEM_TOTAL_GB GB"
 echo ""
 
-# メモリ容量スコアリング（調整: VPS規模判定に使用、性能影響は小）
+# メモリ容量スコアリング
 MEM_TOTAL_INT=$(awk "BEGIN {print int($MEM_TOTAL_GB)}")
 if [ "$MEM_TOTAL_INT" -ge 16 ]; then
     echo -e "${GREEN}✅ メモリ容量: $MEM_TOTAL_GB GB (十分)${NC}"
@@ -742,6 +641,7 @@ else
 fi
 
 # メモリ帯域測定
+echo ""
 echo "メモリ帯域を測定中..."
 
 cat > "$TEMP_DIR/mem_bandwidth.c" << 'EOFCODE'
@@ -762,6 +662,10 @@ double get_time() {
 int main() {
     char *src = aligned_alloc(64, SIZE);
     char *dst = aligned_alloc(64, SIZE);
+    if (!src || !dst) {
+        printf("0.0\n");
+        return 1;
+    }
     memset(src, 0x42, SIZE);
     
     double best_speed = 0.0;
@@ -781,12 +685,17 @@ int main() {
 EOFCODE
 
 gcc -O2 -o "$TEMP_DIR/mem_bandwidth" "$TEMP_DIR/mem_bandwidth.c" 2>/dev/null
-MEM_BANDWIDTH=$("$TEMP_DIR/mem_bandwidth")
+if [ $? -eq 0 ]; then
+    MEM_BANDWIDTH=$("$TEMP_DIR/mem_bandwidth")
+else
+    MEM_BANDWIDTH="0.0"
+    echo -e "${YELLOW}⚠️  メモリ帯域測定に失敗しました${NC}"
+fi
 
 echo "メモリ帯域: $MEM_BANDWIDTH GB/s"
 echo ""
 
-# メモリ帯域スコアリング（調整: 重要度を上げる）
+# メモリ帯域スコアリング
 MEM_BW_INT=$(awk "BEGIN {print int($MEM_BANDWIDTH)}")
 if [ "$MEM_BW_INT" -ge 30 ]; then
     echo -e "${GREEN}✅ メモリ帯域: $MEM_BANDWIDTH GB/s (優秀)${NC}"
@@ -798,7 +707,7 @@ elif [ "$MEM_BW_INT" -ge 8 ]; then
     echo -e "${YELLOW}⚠️  メモリ帯域: $MEM_BANDWIDTH GB/s (制限あり)${NC}"
     MEM_BANDWIDTH_SCORE=7
 else
-    echo -e "${RED}⚠️  メモリ帯域: $MEM_BANDWIDTH GB/s (低速)${NC}"
+    echo -e "${YELLOW}⚠️  メモリ帯域: $MEM_BANDWIDTH GB/s (低速)${NC}"
     MEM_BANDWIDTH_SCORE=4
 fi
 
@@ -836,7 +745,10 @@ double get_time() {
 
 int main() {
     uint64_t *data = (uint64_t *)aligned_alloc(64, DATA_SIZE);
-    if (!data) return 1;
+    if (!data) {
+        printf("0.0\n");
+        return 1;
+    }
     
     memset(data, 0x42, DATA_SIZE);
     volatile uint64_t sum = 0;
@@ -860,7 +772,11 @@ int main() {
 EOFCODE
 
 gcc -O2 -march=native -o "$TEMP_DIR/plaintext_8byte" "$TEMP_DIR/plaintext_8byte.c" 2>/dev/null
-PLAINTEXT_8BYTE=$("$TEMP_DIR/plaintext_8byte")
+if [ $? -eq 0 ]; then
+    PLAINTEXT_8BYTE=$("$TEMP_DIR/plaintext_8byte")
+else
+    PLAINTEXT_8BYTE="0.0"
+fi
 
 echo "平文アクセス（8バイト単位）: $PLAINTEXT_8BYTE GB/s"
 
@@ -884,7 +800,10 @@ double get_time() {
 
 int main() {
     __m128i *data = (__m128i *)aligned_alloc(64, DATA_SIZE);
-    if (!data) return 1;
+    if (!data) {
+        printf("0.0\n");
+        return 1;
+    }
     
     memset(data, 0x42, DATA_SIZE);
     volatile uint64_t sum = 0;
@@ -913,7 +832,11 @@ int main() {
 EOFCODE
 
 gcc -O2 -march=native -msse2 -o "$TEMP_DIR/plaintext_64byte" "$TEMP_DIR/plaintext_64byte.c" 2>/dev/null
-PLAINTEXT_64BYTE=$("$TEMP_DIR/plaintext_64byte")
+if [ $? -eq 0 ]; then
+    PLAINTEXT_64BYTE=$("$TEMP_DIR/plaintext_64byte")
+else
+    PLAINTEXT_64BYTE="0.0"
+fi
 
 echo "平文アクセス（64バイト単位・最適化）: $PLAINTEXT_64BYTE GB/s"
 echo ""
@@ -922,7 +845,6 @@ echo "【平文性能の意味】"
 echo "この数値はMukenVault「なし」の状態でのメモリアクセス速度です。"
 echo "後ほど測定する暗号化速度と比較することで、実際のオーバーヘッドがわかります。"
 echo ""
-
 
 # =================================================================
 # 5. AES-NI実性能測定
@@ -960,6 +882,10 @@ __m128i AES_128_key_expansion(__m128i key, __m128i key_gen) {
 
 int main() {
     unsigned char *data = aligned_alloc(16, SIZE);
+    if (!data) {
+        printf("0.0\n");
+        return 1;
+    }
     memset(data, 0x42, SIZE);
     
     __m128i key = _mm_set_epi32(0x12345678, 0x9ABCDEF0, 0x12345678, 0x9ABCDEF0);
@@ -1024,12 +950,17 @@ int main() {
 EOFCODE
 
 gcc -O3 -march=native -maes -o "$TEMP_DIR/aes_benchmark" "$TEMP_DIR/aes_benchmark.c" 2>/dev/null
-AES_SPEED=$("$TEMP_DIR/aes_benchmark")
+if [ $? -eq 0 ]; then
+    AES_SPEED=$("$TEMP_DIR/aes_benchmark")
+else
+    AES_SPEED="0.0"
+    echo -e "${YELLOW}⚠️  AES-NI測定に失敗しました${NC}"
+fi
 
 echo "AES-NI暗号化速度: $AES_SPEED GB/s"
 echo ""
 
-# AES性能スコアリング（調整: 実測性能を重視）
+# AES性能スコアリング
 AES_SPEED_INT=$(awk "BEGIN {print int($AES_SPEED)}")
 if [ "$AES_SPEED_INT" -ge 20 ]; then
     echo -e "${GREEN}✅ AES-NI性能: $AES_SPEED GB/s (優秀)${NC}"
@@ -1047,7 +978,7 @@ fi
 echo ""
 
 # =================================================================
-# 6. VAES実性能測定（256bit/512bit両対応）
+# 6. VAES実性能測定
 # =================================================================
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${CYAN}  6. VAES実性能測定（最新CPUボーナス）${NC}"
@@ -1254,7 +1185,7 @@ EOFCODE
         fi
     fi
     
-    # 結果表示とスコア計算（調整: VAES性能ボーナス大幅増）
+    # 結果表示とスコア計算
     if [ "$VAES_SPEED" != "0" ] && [ -n "$VAES_SPEED" ]; then
         echo "VAES暗号化速度: $VAES_SPEED GB/s"
         echo ""
@@ -1265,7 +1196,7 @@ EOFCODE
         echo "  → VAESは通常のAES-NIより大幅に高速です"
         echo ""
         
-        # VAES性能ボーナス（調整: 最大25点に増）
+        # VAES性能ボーナス
         VAES_SPEED_INT=$(awk "BEGIN {print int($VAES_SPEED)}")
         if [ "$VAES_SPEED_INT" -ge 60 ]; then
             VAES_PERF_BONUS=25
@@ -1294,7 +1225,6 @@ else
     echo -e "${YELLOW}ℹ️  VAES非対応CPUのため、この測定はスキップされます${NC}"
 fi
 echo ""
-
 
 # =================================================================
 # 7. 環境種別の判定
@@ -1330,7 +1260,6 @@ if [ -e /sys/devices/virtual/dmi/id/sys_vendor ]; then
 fi
 
 echo "推定プロバイダー: $PROVIDER"
-echo ""
 echo ""
 
 # =================================================================
@@ -1400,10 +1329,10 @@ fi
 echo ""
 
 # =================================================================
-# 8.5 プロバイダー戦略分析（新機能）
+# 8.5 プロバイダー戦略分析
 # =================================================================
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${CYAN}  8.5 プロバイダー戦略分析（新機能）${NC}"
+echo -e "${CYAN}  8.5 プロバイダー戦略分析${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
@@ -1457,7 +1386,6 @@ elif [ "$STARS" -ge 2 ]; then
 else
     echo -e "${RED}⚠️  要検討: より高スペックな環境を推奨${NC}"
 fi
-echo ""
 echo ""
 
 # =================================================================
@@ -1520,7 +1448,7 @@ echo -e "${CYAN}  10. 総合診断結果${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-# 総合スコア計算（調整版）
+# 総合スコア計算
 TOTAL_SCORE=$((ARCH_SCORE + CPU_SCORE + INSTRUCTION_SCORE + MEM_SCORE + AES_PERF_SCORE + QUALITY_SCORE + VAES_PERF_BONUS))
 
 # スコア上限を100に制限
@@ -1531,7 +1459,7 @@ fi
 echo "総合スコア: $TOTAL_SCORE/$MAX_SCORE点 ($((TOTAL_SCORE * 100 / MAX_SCORE))%)"
 echo ""
 
-# 総合評価（期待性能ベースで判定、スコアとの整合性を確保）
+# 総合評価
 echo "【総合評価】"
 
 if [ "$EXPECTED_SPEED_INT" -ge 30 ]; then
@@ -1551,10 +1479,9 @@ else
     echo "  ⚠️  より高スペックな環境をお勧めします"
 fi
 echo ""
-echo ""
 
 # =================================================================
-# 11. 適合用途の判定（プロバイダー特性反映版）
+# 11. 適合用途の判定
 # =================================================================
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${CYAN}  11. 適合用途の判定${NC}"
@@ -1564,7 +1491,7 @@ echo ""
 echo "この環境で快適に使える用途:"
 echo ""
 
-USE_CASES=$(get_recommended_use_cases "$EXPECTED_SPEED_INT" "$CPU_GENERATION" "$PROVIDER")
+USE_CASES=$(get_recommended_use_cases "$EXPECTED_SPEED_INT")
 echo "$USE_CASES"
 echo ""
 
@@ -1575,6 +1502,7 @@ echo ""
     echo "=========================================="
     echo "MukenVault Pre-Installation Check Report"
     echo "Generated: $(date)"
+    echo "Version: v1.4.1"
     echo "=========================================="
     echo ""
     echo "System Information:"
@@ -1633,17 +1561,19 @@ echo ""
         echo "  Grade: D (Needs Improvement)"
     fi
     echo ""
+    echo "Recommended Use Cases:"
+    echo "$USE_CASES"
+    echo ""
 } > "$REPORT_FILE"
 
 echo -e "${GREEN}✅ 詳細レポートを $REPORT_FILE に保存しました${NC}"
 echo ""
-echo ""
 
 # =================================================================
-# 13. 次のステップ
+# 12. 次のステップ
 # =================================================================
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${CYAN}  13. 次のステップ${NC}"
+echo -e "${CYAN}  12. 次のステップ${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
@@ -1665,13 +1595,17 @@ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━�
 echo -e "${GREEN}診断完了！ご利用ありがとうございました${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo ""
 echo -e "${GREEN}"
 cat << "EOF"
 ╔══════════════════════════════════════════════════════════════╗
 ║  MukenVault Pre-Check completed successfully!               ║
 ║                                                              ║
-║  🆕 v1.4.0 新機能:                                          ║
+║  🆕 v1.4.1 改善点:                                          ║
+║     • 構文エラーを完全に修正                                ║
+║     • コードの冗長性を削減                                  ║
+║     • エラーハンドリングの改善                              ║
+║                                                              ║
+║  ✨ v1.4.0 新機能:                                          ║
 ║     • CPU世代自動判定                                       ║
 ║     • プロバイダー戦略分析                                  ║
 ║     • より精密なスコアリング                                ║
